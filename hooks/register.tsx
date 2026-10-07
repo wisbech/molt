@@ -185,6 +185,22 @@ function shed($: Engine): void {
   $.clock.after(1, () => void $.prompt.submit({ text: '/molt' }))
 }
 
+// The free answers: lint and graph never touch the model.
+async function answer($: Engine, what: 'lint' | 'graph', ceiling: string): Promise<{ text: string }> {
+  const { problems, notes, indexLines } = await lint($)
+  if (what === 'graph') return { text: graphText(notes) }
+  const head = `${DIR}/: ${notes.length} note(s), INDEX.md ${indexLines}/${INDEX_CAP} lines, context ${k(S.ctx)}, molts ${S.molts}, ceiling ${ceiling}`
+  return { text: problems.length ? `${head}\n${problems.map(p => `- ${p}`).join('\n')}` : `${head}\nclean.` }
+}
+
+// The model is about to save state; the turn that follows ends in a compaction.
+function shedding($: Engine): void {
+  S.phase = 'shedding'
+  S.idleTimer?.cancel()
+  S.idleTimer = null
+  $.ui.invalidate('ui.render')
+}
+
 function graphText(notes: Note[]): string {
   if (!notes.length) return `${DIR}/notes/ is empty.`
   return notes
@@ -209,6 +225,10 @@ export const register: Register = (on, options) => {
   })
 
   on('session.start', async ($, e, next) => {
+    // Registered commands raise command.run and answer without a model turn, in every mode.
+    // (/molt itself is the plugin's markdown command: a skill the model expands.)
+    await $.command.register({ name: 'molt-lint', description: `Lint ${DIR}/: index cap, orphans, broken links, stale handoff. Free.` })
+    await $.command.register({ name: 'molt-graph', description: `Print ${DIR}/notes links as note -> links. Free.` })
     // Priors from earlier sessions; this session's floor is measured on its first turn.
     const g = Number(await $.store.get('growth'))
     const m = Number(await $.store.get('moltReads'))
@@ -302,20 +322,28 @@ export const register: Register = (on, options) => {
     )
   })
 
-  // /molt lint and /molt graph answer here; anything else runs commands/molt.md and sheds.
-  // An installed plugin's command is namespaced (molt:molt); a --plugin-dir load keeps the bare name.
-  on('command.run', { command: ['molt', 'molt:molt'] }, async ($, e, next) => {
-    const arg = e.args.trim()
+  const ceilingText = () =>
+    `${k(S.ceiling)}${pinned ? ' (pinned)' : ` (floor ${k(S.floor)}, growth ${k(S.growth)}/call, molt ${S.moltReads.toFixed(1)} reads)`}`
+
+  // Names may come namespaced (molt:molt-lint) from an installed plugin, bare from --plugin-dir.
+  on('command.run', { command: ['molt-lint', 'molt:molt-lint'] }, $ => answer($, 'lint', ceilingText()))
+  on('command.run', { command: ['molt-graph', 'molt:molt-graph'] }, $ => answer($, 'graph', ceilingText()))
+
+  // A molt is starting: the model is about to save state. Fires however /molt was invoked
+  // (typed, submitted by the idle timer or the button, or called through the Skill tool).
+  on('skill.prompt', { skill: ['molt', 'molt:molt'] }, ($, e, next) => {
+    const arg = /The user adds: (\S*)/.exec(e.text)?.[1]
     if (arg === 'lint' || arg === 'graph') {
-      const { problems, notes, indexLines } = await lint($)
-      if (arg === 'graph') return { text: graphText(notes) }
-      const head = `${DIR}/: ${notes.length} note(s), INDEX.md ${indexLines}/${INDEX_CAP} lines, context ${k(S.ctx)}, molts ${S.molts}, ceiling ${k(S.ceiling)}${pinned ? ' (pinned)' : ` (floor ${k(S.floor)}, growth ${k(S.growth)}/call, molt ${S.moltReads.toFixed(1)} reads)`}`
-      return { text: problems.length ? `${head}\n${problems.map(p => `- ${p}`).join('\n')}` : `${head}\nclean.` }
+      // Typed as /molt lint where the skill path took it: hand the model the free answer to relay.
+      return answer($, arg, ceilingText()).then(r => ({ text: `Relay this to the user exactly, then stop:\n\n${r.text}` }))
     }
-    S.phase = 'shedding'
-    S.idleTimer?.cancel()
-    S.idleTimer = null
-    $.ui.invalidate('ui.render')
+    shedding($)
+    return next(e)
+  })
+  on('command.run', { command: ['molt', 'molt:molt'] }, ($, e, next) => {
+    const arg = e.args.trim()
+    if (arg === 'lint' || arg === 'graph') return answer($, arg, ceilingText())
+    shedding($)
     return next(e)
   })
 }

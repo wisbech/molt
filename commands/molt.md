@@ -1,5 +1,5 @@
 ---
-description: Molt now: save state to .state/ and compact this session in place (also "lint", "graph")
+description: Molt now: save state to .state/ and compact this session in place (housekeeping is /molt-lint, /molt-graph)
 argument-hint: [note for the next stretch]
 ---
 Molt: save the project state to `.state/` so this session can shed its history and continue from the folder. Use your file tools; create the folder if needed.

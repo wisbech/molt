@@ -1,6 +1,6 @@
 {
   "name": "molt",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "When context outgrows its shell, shed it: save state to .state/, compact in place, keep going. One criterion, one call, no new session.",
   "userConfig": {
     "threshold": {

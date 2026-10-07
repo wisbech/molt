@@ -43,10 +43,24 @@ test('/molt lint reports an empty folder as clean', async ($, on) => {
   expect(r.text).toContain('clean')
 })
 
-test('the namespaced command of an installed plugin is answered too', async ($, on) => {
+test('the registered commands answer bare and namespaced, without a model', async ($, on) => {
   folder(on, {})
-  const r = await $.command.run({ command: 'molt:molt', args: 'lint' } as never)
-  expect(r.text).toContain('clean')
+  for (const command of ['molt-lint', 'molt:molt-lint', 'molt:molt']) {
+    const r = await $.command.run({ command, args: command.endsWith('molt') ? 'lint' : '' } as never)
+    expect(r.text).toContain('clean')
+  }
+  const g = await $.command.run({ command: 'molt-graph', args: '' } as never)
+  expect(g.text).toContain('is empty')
+})
+
+test('the skill path: lint is relayed, anything else is a shed that passes through', async ($, on) => {
+  folder(on, {})
+  on('skill.prompt', (_, e) => ({ text: `beneath: ${e.text}` }))
+  const lint = await $.skill.prompt({ skill: 'molt:molt', text: 'Molt: save…\n1. … The user adds: lint\n2. …' })
+  expect(lint.text).toContain('Relay this to the user')
+  expect(lint.text).toContain('clean')
+  const shed = await $.skill.prompt({ skill: 'molt', text: 'Molt: save… The user adds: ship it\n' })
+  expect(shed.text).toContain('beneath:')
 })
 
 test('/molt graph on no notes says so', async ($, on) => {

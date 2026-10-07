@@ -123,9 +123,9 @@ Site: https://wisbech.github.io/molt/ · Tests: `CLAUDE_CODE_ENABLE_FUNCTION_HOO
 - Nothing, usually. At a criterion the session molts by itself.
 - The bar above the prompt shows `ctx 132k · molts at 120k (solved: …)` and a **Molt now** button.
 - `/molt [note]` molts now, with a note for the next stretch.
-- `/molt lint` is free deterministic housekeeping: index cap, orphans, broken links,
-  superseded notes still routed, notes about deleted files, stale handoff.
-- `/molt graph` prints `note -> links`.
+- `/molt-lint` is free deterministic housekeeping: index cap, orphans, broken links,
+  superseded notes still routed, notes about deleted files, stale handoff. No model turn.
+- `/molt-graph` prints `note -> links`. Also free.
 - Options: `idleMinutes` (default 50; set to your cache TTL minus a margin), `threshold`
   (empty: solved; a number pins it), `auto` (off: button and command only).
 
