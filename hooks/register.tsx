@@ -306,14 +306,14 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // The bar: context against the threshold, and the one button.
+  // The bar: always there once the mod is loaded, so "is molt on?" has a visible answer.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey || (S.ctx < 20_000 && S.phase === 'idle' && !S.last)) return next(e)
+    if (e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const text =
       S.phase === 'shedding'
-        ? `molting… saving ${DIR}/HANDOFF.md, then compacting`
-        : `ctx ${k(S.ctx)} · molts at ${k(S.ceiling)}${pinned ? '' : ` (solved: floor ${k(S.floor)}, +${k(S.growth)}/call, molt ${S.moltReads.toFixed(1)} reads)`} or ${idleMinutes} min idle${S.last ? ` · ${S.last}` : ''} `
+        ? `molt · saving ${DIR}/HANDOFF.md, then compacting…`
+        : `molt · ctx ${k(S.ctx)} · sheds at ${k(S.ceiling)}${pinned ? '' : ' (solved)'} or ${idleMinutes} min idle${S.molts ? ` · molts ${S.molts}` : ''}${S.last ? ` · ${S.last}` : ''} `
     return (
       <Box>
         <Text dimColor>{text}</Text>
