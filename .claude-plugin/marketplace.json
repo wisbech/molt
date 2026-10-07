@@ -5,7 +5,7 @@
   "plugins": [
     {
       "name": "molt",
-      "source": { "source": "github", "repo": "wisbech/molt" },
+      "source": "./",
       "description": "Two criteria (idle before the prompt cache expires; a solved context ceiling), one call (/molt: save state to .state/, compact in place)."
     }
   ]
