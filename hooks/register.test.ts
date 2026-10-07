@@ -43,6 +43,12 @@ test('/molt lint reports an empty folder as clean', async ($, on) => {
   expect(r.text).toContain('clean')
 })
 
+test('the namespaced command of an installed plugin is answered too', async ($, on) => {
+  folder(on, {})
+  const r = await $.command.run({ command: 'molt:molt', args: 'lint' } as never)
+  expect(r.text).toContain('clean')
+})
+
 test('/molt graph on no notes says so', async ($, on) => {
   folder(on, {})
   const r = await run($, 'graph')

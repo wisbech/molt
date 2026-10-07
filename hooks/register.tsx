@@ -303,7 +303,8 @@ export const register: Register = (on, options) => {
   })
 
   // /molt lint and /molt graph answer here; anything else runs commands/molt.md and sheds.
-  on('command.run', { command: 'molt' }, async ($, e, next) => {
+  // An installed plugin's command is namespaced (molt:molt); a --plugin-dir load keeps the bare name.
+  on('command.run', { command: ['molt', 'molt:molt'] }, async ($, e, next) => {
     const arg = e.args.trim()
     if (arg === 'lint' || arg === 'graph') {
       const { problems, notes, indexLines } = await lint($)
