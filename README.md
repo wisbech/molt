@@ -97,12 +97,26 @@ that reads markdown can continue from it.
 
 ## Install
 
-```bash
-git clone https://github.com/wisbech/molt.git
-claude --plugin-dir /path/to/molt
+Paste this into Claude Code and let the agent do it:
+
+```
+Install the molt mod for Claude Code:
+1. claude plugin marketplace add wisbech/molt
+2. claude plugin install molt@molt
+3. If the build says hooks modules are early access, add "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1" under "env" in ~/.claude/settings.json.
+Then tell me whether /molt shows up in the command list.
 ```
 
-Tests: `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin test .`
+By hand:
+
+```bash
+claude plugin marketplace add wisbech/molt
+claude plugin install molt@molt
+```
+
+Or for one launch, without installing: `claude --plugin-dir /path/to/molt`.
+
+Site: https://wisbech.github.io/molt/ · Tests: `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1 claude plugin test .`
 
 ## Use
 

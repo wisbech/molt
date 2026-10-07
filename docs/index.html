@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>molt</title>
+<meta name="description" content="molt: a Claude Code mod. When context outgrows its shell, shed it into the folder and keep going.">
+<style>
+  :root {
+    --bg: #faf8f3; --fg: #1d1c1a; --muted: #6b6760; --line: #e3dfd6; --card: #ffffff;
+    --accent: #b5541c; --accent-fg: #ffffff; --code-bg: #f1ede4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15140f; --fg: #ece8df; --muted: #9a958b; --line: #2b2923; --card: #1d1b16;
+      --accent: #e0803f; --accent-fg: #15140f; --code-bg: #22201a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15140f; --fg: #ece8df; --muted: #9a958b; --line: #2b2923; --card: #1d1b16;
+    --accent: #e0803f; --accent-fg: #15140f; --code-bg: #22201a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.55 ui-serif, Georgia, "Iowan Old Style", serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 48px 16px 96px; }
+  h1 { font-size: 56px; letter-spacing: -0.02em; margin: 0 0 8px; font-weight: 600; }
+  h2 { font-size: 24px; margin: 56px 0 12px; font-weight: 600; letter-spacing: -0.01em; }
+  h3 { font-size: 18px; margin: 28px 0 8px; font-weight: 600; }
+  p, li { max-width: 62ch; }
+  .lede { font-size: 22px; color: var(--muted); margin: 0 0 32px; }
+  .tag { display: inline-block; font: 13px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; margin-bottom: 24px; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0 24px; font-size: 16px; }
+  td, th { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; }
+  th { color: var(--muted); font-weight: 600; font-size: 14px; }
+  code, pre { font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  code { background: var(--code-bg); padding: 2px 5px; border-radius: 4px; }
+  pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; overflow-x: auto; margin: 12px 0; }
+  pre code { background: none; padding: 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px 20px 16px; margin: 24px 0; }
+  .card h3 { margin-top: 0; }
+  .row { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 10px; }
+  button { font: 14px/1 ui-sans-serif, system-ui, sans-serif; background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 8px; padding: 10px 14px; cursor: pointer; }
+  button:hover { filter: brightness(1.08); }
+  .muted { color: var(--muted); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 600px) { .two { grid-template-columns: 1fr; } h1 { font-size: 44px; } }
+  a { color: var(--accent); }
+  footer { margin-top: 72px; color: var(--muted); font-size: 15px; border-top: 1px solid var(--line); padding-top: 20px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="tag">a Claude Code mod</div>
+  <h1>molt</h1>
+  <p class="lede">When context outgrows its shell, shed it into the folder and keep going.</p>
+
+  <div class="card">
+    <h3>Install</h3>
+    <p class="muted" style="margin-top:0">Paste this into Claude Code. The agent runs the two commands and tells you when <code>/molt</code> is there.</p>
+<pre id="paste"><code>Install the molt mod for Claude Code:
+1. claude plugin marketplace add wisbech/molt
+2. claude plugin install molt@molt
+3. If the build says hooks modules are early access, add "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1" under "env" in ~/.claude/settings.json.
+Then tell me whether /molt shows up in the command list.</code></pre>
+    <div class="row">
+      <span class="muted">Or by hand: <code>claude plugin marketplace add wisbech/molt</code> then <code>claude plugin install molt@molt</code>. Or <code>claude --plugin-dir path/to/molt</code>.</span>
+      <button data-copy="paste">Copy the prompt</button>
+    </div>
+  </div>
+
+  <h2>The problem, measured</h2>
+  <p>If your usage looks like this, the cache is not your problem:</p>
+  <table>
+    <tr><td>Tokens, one project, one week</td><td>158.7M</td></tr>
+    <tr><td>Cache hit rate</td><td>96%</td></tr>
+    <tr><td>Cache read</td><td>152.2M</td></tr>
+    <tr><td>Cache write</td><td>5M</td></tr>
+    <tr><td>Uncached input</td><td>0.7M</td></tr>
+    <tr><td>Output</td><td>0.8M</td></tr>
+  </table>
+  <p>That is a healthy cache. Only 4% of input missed it. Yet 96% of all tokens were cache <em>reads</em>, and cache reads are what you pay for a long thread: every API call resends the whole conversation. A hit is cheaper than a miss, but half a million tokens of hits per call, hundreds of times a day, is still the bill.</p>
+  <p>Parsing the session transcripts found where it went. One thread had been kept open for seven days:</p>
+  <table>
+    <tr><th>The seven-day thread</th><th></th></tr>
+    <tr><td>API calls</td><td>618</td></tr>
+    <tr><td>Average context per call</td><td>~480k</td></tr>
+    <tr><td>Peak context</td><td>966k of 1M</td></tr>
+    <tr><td>Cache reads</td><td>296M</td></tr>
+    <tr><td>Full cache rewrites</td><td>14 × 550k–850k</td></tr>
+    <tr><td>Subagents, all on the most expensive model</td><td>61</td></tr>
+  </table>
+
+  <div class="two">
+    <div class="card">
+      <h3>1. Thread length</h3>
+      <p>Every tool call re-read ~480k tokens. A fresh session costs ~70k. Resuming the thread cost 480k on the first message and on every call after it. A sibling thread averaging 230k cost a quarter as much. Spend tracks thread length.</p>
+    </div>
+    <div class="card">
+      <h3>2. The cache expiring while you sleep</h3>
+      <p>The prompt cache lives one hour. Every morning's first message rewrote the entire context at full write price. Fourteen such rewrites, each after an idle gap over an hour. Auto-compact never helped: on a 1M model it fires near 967k.</p>
+    </div>
+  </div>
+  <p>What it was not: the personal harness, hooks and rituals were under 4% of the tokens. Measure before you blame your tooling.</p>
+
+  <h2>The mechanism</h2>
+  <p>Two criteria, one call.</p>
+  <ol>
+    <li><strong>Idle.</strong> Fifty minutes into an idle stretch, while the cache is still warm and reads are cheap, the session molts. When you come back the rewrite is of a 60k context, not 500k.</li>
+    <li><strong>Size.</strong> Context above a ceiling that molt solves, not sets. Over a stretch between molts, tokens per call ≈ (F+T)/2 + m·T·g/(T−F): F the floor after a molt, g the growth per API call, m the reads a molt costs. The minimum is <code>T = F + √(2·m·g·F)</code>. Molt measures all three and re-solves after every turn: light chat lands near 95k, heavy subagent work near 165k on a 73k floor.</li>
+  </ol>
+  <p>The call is <code>/molt</code>. The model saves state to <code>.state/</code>; the mod compacts the session in place, keeping only what the handoff does not cover. Same session, same prompt box, a fraction of the tokens.</p>
+<pre><code>.state/
+  INDEX.md      routing table: one line per note, says WHEN to read it (cap 200)
+  HANDOFF.md    where the last stretch stopped (cap 60; rewritten by each molt)
+  log.md        append-only history; grep it, never load it whole
+  notes/*.md    decisions, failures, patterns; frontmatter links form the graph</code></pre>
+  <p>INDEX.md and a fresh HANDOFF.md ride the first user message next to CLAUDE.md. The folder is plain markdown: any agent can continue from it.</p>
+
+  <h2>Use</h2>
+  <ul>
+    <li>Nothing, usually. At a criterion the session molts by itself.</li>
+    <li>The bar above the prompt shows <code>ctx 132k · molts at 120k</code> and a <strong>Molt now</strong> button.</li>
+    <li><code>/molt [note]</code> molts now. <code>/molt lint</code> is free housekeeping. <code>/molt graph</code> prints note links.</li>
+    <li>Pair with the native <code>/autocompact 150k</code> and <code>CLAUDE_CODE_SUBAGENT_MODEL=sonnet</code>.</li>
+  </ul>
+
+  <h2>Measure your own</h2>
+  <p>Reads your transcripts, prints the five biggest threads. If <code>avg_ctx</code> is a few hundred k, you have the problem above.</p>
+<pre id="measure"><code>python3 - &lt;&lt;'EOF'
+import json, glob, os
+d = os.path.expanduser('~/.claude/projects/')
+for f in sorted(glob.glob(d + '*/*.jsonl'), key=os.path.getsize, reverse=True)[:5]:
+    seen, n, cr, cw, mx = set(), 0, 0, 0, 0
+    for line in open(f):
+        try: o = json.loads(line)
+        except: continue
+        m = o.get('message') or {}; u = m.get('usage') or {}
+        if o.get('type') != 'assistant' or not u or m.get('id') in seen: continue
+        seen.add(m.get('id')); n += 1
+        ctx = u.get('input_tokens', 0) + u.get('cache_read_input_tokens', 0) + u.get('cache_creation_input_tokens', 0)
+        cr += u.get('cache_read_input_tokens', 0); cw += u.get('cache_creation_input_tokens', 0); mx = max(mx, ctx)
+    print(f"{os.path.basename(f)[:8]} calls={n} avg_ctx={(cr+cw)/max(n,1)/1e3:.0f}k peak={mx/1e3:.0f}k cache_read={cr/1e6:.0f}M cache_write={cw/1e6:.1f}M")
+EOF</code></pre>
+  <div class="row"><span></span><button data-copy="measure">Copy the script</button></div>
+
+  <footer>
+    <p>Source and README: <a href="https://github.com/wisbech/molt">github.com/wisbech/molt</a>. Borrowed from serf ("the folder is the state"), karpathy's LLM wiki (index, log, lint), Anthropic's harness notes, and Graphiti (supersede, never delete).</p>
+  </footer>
+</main>
+<script>
+  for (const b of document.querySelectorAll('button[data-copy]')) {
+    b.addEventListener('click', async () => {
+      const text = document.getElementById(b.dataset.copy).innerText;
+      try { await navigator.clipboard.writeText(text); b.textContent = 'Copied'; }
+      catch { b.textContent = 'Select and copy'; }
+      setTimeout(() => { b.textContent = b.dataset.copy === 'paste' ? 'Copy the prompt' : 'Copy the script'; }, 1600);
+    });
+  }
+</script>
+</body>
+</html>
