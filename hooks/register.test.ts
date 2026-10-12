@@ -88,6 +88,16 @@ test('lint finds an orphan, a bad link, a superseded note still routed, a stale 
   expect(g.text).toContain('old (superseded)')
 })
 
+test('the bar draws on terminal and desktop from the start, with the Molt now button', async ($, on) => {
+  folder(on, {})
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'molt', surface, component: 'AbovePrompt', props: { hasSurvey: false } as never })
+    expect(await ui.find({ type: 'Text', text: /molt · ctx 0k/ })).toBeDefined()
+    expect(await ui.find({ key: 'molt' })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
 test('/molt with a note passes through to the markdown command beneath', async ($, on) => {
   folder(on, {})
   on('command.run', { command: 'molt' }, () => ({ text: 'ran beneath' }))
