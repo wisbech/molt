@@ -37,6 +37,9 @@ const S = {
   molts: 0,
   last: '',
   idleTimer: null as { cancel: () => void } | null,
+  // diagnostics for "I do not see the bar": where the session draws, and whether the bar was ever asked for
+  surfaces: '' as string,
+  barDraws: 0,
   // the sweet-spot inputs
   floor: 0, // F: context at the first turn after a start or a molt
   isFloorPending: true,
@@ -189,7 +192,7 @@ function shed($: Engine): void {
 async function answer($: Engine, what: 'lint' | 'graph', ceiling: string): Promise<{ text: string }> {
   const { problems, notes, indexLines } = await lint($)
   if (what === 'graph') return { text: graphText(notes) }
-  const head = `${DIR}/: ${notes.length} note(s), INDEX.md ${indexLines}/${INDEX_CAP} lines, context ${k(S.ctx)}, molts ${S.molts}, ceiling ${ceiling}`
+  const head = `${DIR}/: ${notes.length} note(s), INDEX.md ${indexLines}/${INDEX_CAP} lines, context ${k(S.ctx)}, molts ${S.molts}, ceiling ${ceiling}\nsurfaces: ${S.surfaces || 'unknown'} · bar asked for ${S.barDraws} time(s) (the bar is drawn on terminal and desktop surfaces only)`
   return { text: problems.length ? `${head}\n${problems.map(p => `- ${p}`).join('\n')}` : `${head}\nclean.` }
 }
 
@@ -235,6 +238,7 @@ export const register: Register = (on, options) => {
     if (g > 0) S.growth = g
     if (m > 0) S.moltReads = m
     S.isFloorPending = true
+    S.surfaces = (await $.session.surfaces().catch(() => [] as string[])).join(',') || String(e.surface ?? 'none')
     S.section = await compose($)
     const { problems } = await lint($)
     if (problems.length) $.ui.toast(`${DIR}: ${problems.length} lint issue(s). Run /molt-lint.`)
@@ -312,6 +316,7 @@ export const register: Register = (on, options) => {
 
   // The bar: always there once the mod is loaded, so "is molt on?" has a visible answer.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    S.barDraws += 1
     if (e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const text =
