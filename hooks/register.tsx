@@ -237,7 +237,11 @@ export const register: Register = (on, options) => {
     S.isFloorPending = true
     S.section = await compose($)
     const { problems } = await lint($)
-    if (problems.length) $.ui.toast(`${DIR}: ${problems.length} lint issue(s). Run /molt lint.`)
+    if (problems.length) $.ui.toast(`${DIR}: ${problems.length} lint issue(s). Run /molt-lint.`)
+    // The bar is drawn on terminal and desktop only; elsewhere (phone, claude.ai) say hello once.
+    if (e.surface !== 'terminal' && e.surface !== 'desktop') {
+      $.ui.toast(`molt on · sheds at ${k(S.ceiling)} or ${idleMinutes} min idle · /molt-lint, /molt`)
+    }
     return next(e)
   })
 
