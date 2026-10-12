@@ -202,6 +202,7 @@ function shedding($: Engine): void {
   S.idleTimer?.cancel()
   S.idleTimer = null
   $.ui.invalidate('ui.render')
+  $.ui.log(`molt: saving ${DIR}/HANDOFF.md, then compacting (context ${k(S.ctx)})`)
 }
 
 function graphText(notes: Note[]): string {
@@ -242,10 +243,8 @@ export const register: Register = (on, options) => {
     S.section = await compose($)
     const { problems } = await lint($)
     if (problems.length) $.ui.toast(`${DIR}: ${problems.length} lint issue(s). Run /molt-lint.`)
-    // The bar is drawn on terminal and desktop only; elsewhere (phone, claude.ai) say hello once.
-    if (e.surface !== 'terminal' && e.surface !== 'desktop') {
-      $.ui.toast(`molt on · sheds at ${k(S.ceiling)} or ${idleMinutes} min idle · /molt-lint, /molt`)
-    }
+    // One dim transcript line, drawn on every surface (claude.ai and phone included), so "is molt on?" is answered.
+    $.ui.log(`molt ${S.section ? 'resumed from' : 'on'} ${DIR}/ · sheds at ${k(S.ceiling)}${pinned ? '' : ' (solved)'} or ${idleMinutes} min idle · /molt sheds now, /molt lint checks`)
     return next(e)
   })
 
@@ -290,8 +289,10 @@ export const register: Register = (on, options) => {
           S.last = `molted ${k(before)} → ${k(S.ctx)}`
         }
         $.ui.toast(S.last)
+        $.ui.log(`molt: ${S.last}`)
       } else {
         S.last = `molt interrupted (${e.reason})`
+        $.ui.log(`molt: ${S.last}`)
       }
     }
 
@@ -305,6 +306,7 @@ export const register: Register = (on, options) => {
       S.idleTimer = $.clock.after(idleMinutes * 60_000, () => {
         S.idleTimer = null
         S.last = `idle ${idleMinutes} min, molting before the cache expires`
+        $.ui.log(`molt: ${S.last}`)
         shed($)
       })
     }
