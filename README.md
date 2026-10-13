@@ -95,6 +95,36 @@ INDEX.md and a fresh HANDOFF.md ride the first user message next to CLAUDE.md. A
 older than 7 days is marked stale, not trusted. The folder is harness-agnostic: any agent
 that reads markdown can continue from it.
 
+## Where it works
+
+| Surface | Automatic molt | Bar + button | `/molt`, `/molt-lint` |
+|---|---|---|---|
+| Terminal, Desktop app | yes | yes | yes |
+| Remote Control thread (phone or claude.ai driving your own machine) | yes | no bar; transcript lines instead | `/molt lint` with a space |
+| Cloud session (claude.ai Projects, claude.ai/code, `claude --cloud`) | yes, once the environment loads it (below) | no bar; transcript lines | `/molt lint` with a space |
+| Plain claude.ai chat without Claude Code | no plugins run there | | |
+
+### Cloud sessions and claude.ai Projects
+
+A cloud session runs in a fresh container and does **not** install plugins a repository declares in
+`.claude/settings.json`. Load molt through the environment instead. In claude.ai, open the project's
+settings, edit its cloud environment, and set:
+
+Environment variables:
+```
+CLAUDE_CODE_PLUGIN_DIRS=~/molt
+```
+
+Setup script:
+```bash
+git clone --depth 1 https://github.com/wisbech/molt.git ~/molt
+```
+
+The setup script runs before Claude Code starts, and `CLAUDE_CODE_PLUGIN_DIRS` loads the clone like
+`--plugin-dir`. Every thread in that project then starts with molt on, and the first transcript line says so.
+Because the container is wiped between sessions, commit `.state/` to the branch so the next session
+resumes from it: `/molt` does the writing, you (or your branch workflow) do the commit.
+
 ## Install
 
 Paste this into Claude Code and let the agent do it:

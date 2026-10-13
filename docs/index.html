@@ -69,6 +69,20 @@ Then tell me whether /molt shows up in the command list.</code></pre>
     </div>
   </div>
 
+  <div class="card">
+    <h3>claude.ai Projects and cloud sessions</h3>
+    <p class="muted" style="margin-top:0">A cloud container never installs plugins a repo declares. Load molt from the project's cloud environment instead: in claude.ai, open the project settings, edit its environment, and set these two fields.</p>
+<pre id="cloud"><code>Environment variables:
+CLAUDE_CODE_PLUGIN_DIRS=~/molt
+
+Setup script:
+git clone --depth 1 https://github.com/wisbech/molt.git ~/molt</code></pre>
+    <div class="row">
+      <span class="muted">No bar on claude.ai; molt writes transcript lines instead. Use <code>/molt lint</code> with a space there. Commit <code>.state/</code> so the next container resumes from it.</span>
+      <button data-copy="cloud">Copy</button>
+    </div>
+  </div>
+
   <h2>The problem, measured</h2>
   <p>If your usage looks like this, the cache is not your problem:</p>
   <table>
@@ -154,7 +168,7 @@ EOF</code></pre>
       const text = document.getElementById(b.dataset.copy).innerText;
       try { await navigator.clipboard.writeText(text); b.textContent = 'Copied'; }
       catch { b.textContent = 'Select and copy'; }
-      setTimeout(() => { b.textContent = b.dataset.copy === 'paste' ? 'Copy the prompt' : 'Copy the script'; }, 1600);
+      setTimeout(() => { b.textContent = { paste: 'Copy the prompt', measure: 'Copy the script', cloud: 'Copy' }[b.dataset.copy]; }, 1600);
     });
   }
 </script>
