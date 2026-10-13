@@ -122,8 +122,11 @@ git clone --depth 1 https://github.com/wisbech/molt.git ~/molt
 
 The setup script runs before Claude Code starts, and `CLAUDE_CODE_PLUGIN_DIRS` loads the clone like
 `--plugin-dir`. Every thread in that project then starts with molt on, and the first transcript line says so.
-Because the container is wiped between sessions, commit `.state/` to the branch so the next session
-resumes from it: `/molt` does the writing, you (or your branch workflow) do the commit.
+Because the container is wiped between sessions, a cloud `/molt` commits `.state/` and pushes the thread's
+branch, so the next session resumes from it. Two cloud quirks molt works around: the VM pauses after a few
+idle minutes and restarts Claude Code on resume, so the idle timer cannot fire there, and every resume after
+the cache's hour starts cold. So on a cloud resume with a large context, molt sheds immediately: that
+rewrite is paid anyway, and it becomes the last big one.
 
 ## Install
 

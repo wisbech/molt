@@ -245,6 +245,19 @@ export const register: Register = (on, options) => {
     if (problems.length) $.ui.toast(`${DIR}: ${problems.length} lint issue(s). Run /molt-lint.`)
     // One dim transcript line, drawn on every surface (claude.ai and phone included), so "is molt on?" is answered.
     $.ui.log(`molt ${S.section ? 'resumed from' : 'on'} ${DIR}/ · sheds at ${k(S.ceiling)}${pinned ? '' : ' (solved)'} or ${idleMinutes} min idle · /molt sheds now, /molt lint checks`)
+    // Cloud: the VM pauses after a few idle minutes and Claude Code restarts on resume, so the idle timer
+    // never fires there and every resume after the cache TTL rewrites the whole context. If this is a
+    // resume with a large context, shed now: the rewrite is being paid anyway, make it the last one.
+    const isCloud = Boolean(await $.env.get('CLAUDE_CODE_REMOTE_SESSION_ID'))
+    if (isCloud && isAuto) {
+      const { context } = await $.session.usage()
+      if ((context.tokens ?? 0) >= IDLE_FLOOR) {
+        S.ctx = context.tokens ?? 0
+        S.last = `cloud resume at ${k(S.ctx)}: molting before the next cold start`
+        $.ui.log(`molt: ${S.last}`)
+        shed($)
+      }
+    }
     return next(e)
   })
 
