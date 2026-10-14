@@ -40,6 +40,7 @@ const S = {
   // diagnostics for "I do not see the bar": where the session draws, and whether the bar was ever asked for
   surfaces: '' as string,
   barDraws: 0,
+  moltCommand: 'molt', // molt:molt when installed, molt from --plugin-dir; read off $.command.list()
   // the sweet-spot inputs
   floor: 0, // F: context at the first turn after a start or a molt
   isFloorPending: true,
@@ -179,13 +180,22 @@ async function compose($: Engine): Promise<string | null> {
 const COMPACT_INSTRUCTIONS = `The project state was just saved to ${DIR}/HANDOFF.md and ${DIR}/INDEX.md, which the conversation carries. Keep only: the user's latest request, what is in progress right now, files currently being edited, and any tool result the very next step needs. Drop everything the handoff covers.`
 
 // Shedding runs as its own turn once the session is idle; a timer outlives the dispatch.
+// The host refuses $.prompt.submit of a text starting with "/", so the command is run as a command.
+// Whatever stops it, the phase goes back to idle: a stuck "shedding" hides the button and every criterion.
 function shed($: Engine): void {
   if (S.phase === 'shedding') return
   S.phase = 'shedding'
   S.idleTimer?.cancel()
   S.idleTimer = null
   $.ui.invalidate('ui.render')
-  $.clock.after(1, () => void $.prompt.submit({ text: '/molt' }))
+  $.clock.after(1, () => {
+    void $.command.run({ command: S.moltCommand } as never).catch((err: unknown) => {
+      S.phase = 'idle'
+      S.last = `molt could not start: ${err instanceof Error ? err.message : String(err)}`
+      $.ui.log(`molt: ${S.last}`)
+      $.ui.invalidate('ui.render')
+    })
+  })
 }
 
 // The free answers: lint and graph never touch the model.
@@ -233,6 +243,8 @@ export const register: Register = (on, options) => {
     // (/molt itself is the plugin's markdown command: a skill the model expands.)
     await $.command.register({ name: 'molt-lint', description: `Lint ${DIR}/: index cap, orphans, broken links, stale handoff. Free.` })
     await $.command.register({ name: 'molt-graph', description: `Print ${DIR}/notes links as note -> links. Free.` })
+    const names = (await $.command.list().catch(() => [])).map(c => c.name)
+    S.moltCommand = names.includes('molt:molt') ? 'molt:molt' : 'molt'
     // Priors from earlier sessions; this session's floor is measured on its first turn.
     const g = Number(await $.store.get('growth'))
     const m = Number(await $.store.get('moltReads'))
@@ -292,7 +304,9 @@ export const register: Register = (on, options) => {
           void $.store.set('moltReads', S.moltReads)
         }
         S.section = await compose($)
-        const r = await $.session.compact({ instructions: COMPACT_INSTRUCTIONS })
+        const r = await $.session.compact({ instructions: COMPACT_INSTRUCTIONS }).catch((err: unknown) => ({
+          skip: err instanceof Error ? err.message : String(err),
+        }))
         if ('skip' in r) {
           S.last = `molt: compaction skipped (${r.skip})`
         } else {
