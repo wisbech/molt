@@ -52,7 +52,7 @@ const S = {
 }
 
 const k = (n: number) => `${Math.round(n / 1000)}k`
-const SHOW_MS = 90_000 // how long a notice stays in the bar
+const SHOW_MS = 10_000 // how long a notice stays above the prompt
 
 // Terminal and desktop draw the bar; every other surface gets a dim transcript line instead.
 const hasBar = () => /terminal|desktop/i.test(S.surfaces)
@@ -61,8 +61,21 @@ const hasBar = () => /terminal|desktop/i.test(S.surfaces)
 function say($: Engine, text: string): void {
   S.last = text
   S.lastAt = Date.now()
-  if (hasBar()) $.ui.invalidate('ui.render')
-  else $.ui.log(`molt: ${text}`)
+  if (hasBar()) {
+    $.ui.invalidate('ui.render')
+    $.clock.after(SHOW_MS + 100, () => $.ui.invalidate('ui.render'))
+  } else $.ui.log(`molt: ${text}`)
+}
+
+// The indicator lives in the status row under the prompt: 🟢 177k ◔ 12m. Fullness as the dot's
+// color, idle time as a clock that fills over the idle window. The status row takes text only.
+function indicator($: Engine, idleMinutes: number): void {
+  const full = Math.min(1, S.ctx / Math.max(1, S.ceiling))
+  const idleMin = S.turnAt ? (Date.now() - S.turnAt) / 60_000 : 0
+  const idle = idleMinutes > 0 && S.ctx >= IDLE_FLOOR ? Math.min(1, idleMin / idleMinutes) : 0
+  const dot = S.phase === 'shedding' ? '⚪' : full >= 0.85 ? '🔴' : full >= 0.6 ? '🟡' : '🟢'
+  const clock = idle > 0 ? ` ${CLOCK[Math.min(4, Math.floor(idle * 4))]} ${Math.floor(idleMin)}m` : ''
+  $.ui.status(`${dot} ${k(S.ctx)}${clock}`)
 }
 
 // Fullness 0..1 → a theme color: green, then amber from 60%, red from 85%.
@@ -277,7 +290,7 @@ export const register: Register = (on, options) => {
     if (!hasBar()) $.ui.log(`molt ${S.section ? 'resumed from' : 'on'} ${DIR}/ · sheds at ${k(S.ceiling)}${pinned ? '' : ' (solved)'} or ${idleMinutes} min idle · /molt sheds now, /molt lint checks`)
     S.turnAt = Date.now()
     // The bar's idle clock advances a glyph a few times an hour; notices fade on the same tick.
-    $.clock.every(60_000, () => $.ui.invalidate('ui.render'))
+    $.clock.every(60_000, () => indicator($, idleMinutes))
     // Cloud: the VM pauses after a few idle minutes and Claude Code restarts on resume, so the idle timer
     // never fires there and every resume after the cache TTL rewrites the whole context. If this is a
     // resume with a large context, shed now: the rewrite is being paid anyway, make it the last one.
@@ -356,16 +369,17 @@ export const register: Register = (on, options) => {
     }
 
     S.turnAt = Date.now()
-    $.ui.status(`ctx ${k(S.ctx)}`)
+    indicator($, idleMinutes)
     $.ui.invalidate('ui.render')
     return next(e)
   })
 
-  // The bar: always there once the mod is loaded, so "is molt on?" has a visible answer.
+  // Above the prompt: nothing at rest. A line while a molt runs, and a notice for SHOW_MS after one.
+  // The standing indicator is the status row (see `indicator`).
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     S.barDraws += 1
     if (e.props.hasSurvey) return next(e)
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Text } = $.ui.resolve(e)
     if (S.phase === 'shedding') {
       return (
         <Box>
@@ -374,19 +388,12 @@ export const register: Register = (on, options) => {
         </Box>
       )
     }
-    // Two glyphs: ● how full the shell is (of the ceiling), ◔ how far into the idle hour.
-    const full = Math.min(1, S.ctx / Math.max(1, S.ceiling))
-    const idleMin = S.turnAt ? (Date.now() - S.turnAt) / 60_000 : 0
-    const idle = idleMinutes > 0 && S.ctx >= IDLE_FLOOR ? Math.min(1, idleMin / idleMinutes) : 0
     const notice = S.last && Date.now() - S.lastAt < SHOW_MS ? S.last : ''
+    if (!notice) return next(e)
     return (
       <Box>
-        <Text color={tone(full)}>● </Text>
-        <Text dimColor>{k(S.ctx)}/{k(S.ceiling)} </Text>
-        {idle > 0 && <Text color={tone(idle)}>{CLOCK[Math.min(4, Math.floor(idle * 4))]} </Text>}
-        {idle > 0 && <Text dimColor>{Math.floor(idleMin)}m </Text>}
-        {notice && <Text dimColor>· {notice} </Text>}
-        <Button key="molt" label="molt" onPress={() => shed($)} />
+        <Text color={tone(Math.min(1, S.ctx / Math.max(1, S.ceiling)))}>● </Text>
+        <Text dimColor>molt {notice}</Text>
       </Box>
     )
   })

@@ -134,7 +134,7 @@ git clone --depth 1 https://github.com/wisbech/molt.git ~/molt</code></pre>
   <h2>Use</h2>
   <ul>
     <li>Nothing, usually. At a criterion the session molts by itself.</li>
-    <li>The bar above the prompt is two glyphs: <code>● 132k/145k</code> (green, amber, red by fullness) and <code>◔ 12m</code> (how far into the idle hour), then a <strong>molt</strong> button. Notices fade after 90 seconds.</li>
+    <li>The status row under the prompt shows <code>🟢 132k ◔ 12m</code>: the dot is fullness against the ceiling (green, yellow, red), the clock is how far into the idle window. A <code>molted 669k → 80k</code> notice shows above the prompt for 10 seconds, then goes.</li>
     <li><code>/molt [note]</code> molts now. <code>/molt-lint</code> is free housekeeping. <code>/molt-graph</code> prints note links.</li>
     <li>Pair with the native <code>/autocompact 150k</code> and <code>CLAUDE_CODE_SUBAGENT_MODEL=sonnet</code>.</li>
   </ul>

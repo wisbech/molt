@@ -88,12 +88,12 @@ test('lint finds an orphan, a bad link, a superseded note still routed, a stale 
   expect(g.text).toContain('old (superseded)')
 })
 
-test('the bar draws on terminal and desktop from the start, with the molt button', async ($, on) => {
+test('above the prompt nothing is drawn at rest, on terminal and desktop', async ($, on) => {
   folder(on, {})
+  on('ui.render', () => ({ type: 'Box', props: {}, children: [] }) as never) // the surface beneath draws an empty band
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'molt', surface, component: 'AbovePrompt', props: { hasSurvey: false } as never })
-    expect(await ui.find({ type: 'Text', text: /0k\/150k/ })).toBeDefined()
-    expect(await ui.find({ key: 'molt' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /molt/ })).toBeUndefined()
     await ui.unmount()
   }
 })
