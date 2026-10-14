@@ -75,8 +75,9 @@ Two criteria, one call.
 2. **Size.** Context tokens ≥ the ceiling, the backstop. The ceiling is solved, not set.
    Over a stretch between molts, tokens per call ≈ (F + T)/2 + m·T·g/(T − F): F the floor
    (context right after a molt), g the growth per API call, m the reads a molt costs. The
-   minimum is T = F + √(2·m·g·F). Molt measures all three from usage and re-solves after
-   every turn, so light chat lands near 95k and heavy subagent work near 165k on a 73k floor.
+   minimum is T = F + √(2·m·g·F); molt takes 1.5× that, since the curve is flat past it and a
+   roomier shell molts less often. It measures all three from usage and re-solves after every
+   turn, so light chat lands near 105k and heavy subagent work near 215k on a 73k floor.
    Set `threshold` to a number to pin it instead.
 
 The call is `/molt`. The model saves state to `.state/`; the mod then compacts the session in
