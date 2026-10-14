@@ -121,7 +121,7 @@ git clone --depth 1 https://github.com/wisbech/molt.git ~/molt</code></pre>
   <p>Two criteria, one call.</p>
   <ol>
     <li><strong>Idle.</strong> Fifty minutes into an idle stretch, while the cache is still warm and reads are cheap, the session molts. When you come back the rewrite is of a 60k context, not 500k.</li>
-    <li><strong>Size.</strong> Context above a ceiling that molt solves, not sets. Over a stretch between molts, tokens per call ≈ (F+T)/2 + m·T·g/(T−F): F the floor after a molt, g the growth per API call, m the reads a molt costs. The minimum is <code>T = F + √(2·m·g·F)</code>. Molt measures all three and re-solves after every turn: light chat lands near 95k, heavy subagent work near 165k on a 73k floor.</li>
+    <li><strong>Size.</strong> Context above a ceiling that molt solves, not sets. Over a stretch between molts, tokens per call ≈ (F+T)/2 + m·T·g/(T−F): F the floor after a molt, g the growth per API call, m the reads a molt costs. The minimum is <code>T = F + √(2·m·g·F)</code>; molt takes 1.5× that. It measures all three and re-solves after every turn: light chat lands near 105k, heavy subagent work near 215k on a 73k floor.</li>
   </ol>
   <p>The call is <code>/molt</code>. The model saves state to <code>.state/</code>; the mod compacts the session in place, keeping only what the handoff does not cover. Same session, same prompt box, a fraction of the tokens.</p>
 <pre><code>.state/
@@ -134,7 +134,7 @@ git clone --depth 1 https://github.com/wisbech/molt.git ~/molt</code></pre>
   <h2>Use</h2>
   <ul>
     <li>Nothing, usually. At a criterion the session molts by itself.</li>
-    <li>The bar above the prompt shows <code>ctx 132k · molts at 120k</code> and a <strong>Molt now</strong> button.</li>
+    <li>The bar above the prompt is two glyphs: <code>● 132k/145k</code> (green, amber, red by fullness) and <code>◔ 12m</code> (how far into the idle hour), then a <strong>molt</strong> button. Notices fade after 90 seconds.</li>
     <li><code>/molt [note]</code> molts now. <code>/molt-lint</code> is free housekeeping. <code>/molt-graph</code> prints note links.</li>
     <li>Pair with the native <code>/autocompact 150k</code> and <code>CLAUDE_CODE_SUBAGENT_MODEL=sonnet</code>.</li>
   </ul>

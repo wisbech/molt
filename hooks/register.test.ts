@@ -26,14 +26,14 @@ function folder(on: On, files: Record<string, string>, mtimeMs = 0) {
 }
 
 test('the ceiling is the cost minimum: F + sqrt(2·m·g·F), bounded, in 5k steps', () => {
-  // John's setup: 73k floor, 3 reads per molt. Light work (1k/call) → ~95k; heavy (20k/call) → ~165k.
-  expect(solveCeiling(73_000, 1_000, 3)).toBe(95_000)
-  expect(solveCeiling(73_000, 5_000, 3)).toBe(120_000)
-  expect(solveCeiling(73_000, 20_000, 3)).toBe(165_000)
+  // John's setup: 73k floor, 3 reads per molt, 1.5× the pure minimum. Light work (1k/call) → ~105k; heavy (20k/call) → ~215k.
+  expect(solveCeiling(73_000, 1_000, 3)).toBe(105_000)
+  expect(solveCeiling(73_000, 5_000, 3)).toBe(145_000)
+  expect(solveCeiling(73_000, 20_000, 3)).toBe(215_000)
   // never closer than 20k above the floor, never above 400k, floor never read below 20k
   expect(solveCeiling(73_000, 10, 1)).toBe(95_000)
   expect(solveCeiling(300_000, 200_000, 5)).toBe(400_000)
-  expect(solveCeiling(0, 5_000, 3)).toBe(45_000)
+  expect(solveCeiling(0, 5_000, 3)).toBe(55_000)
 })
 
 test('/molt lint reports an empty folder as clean', async ($, on) => {
@@ -88,11 +88,11 @@ test('lint finds an orphan, a bad link, a superseded note still routed, a stale 
   expect(g.text).toContain('old (superseded)')
 })
 
-test('the bar draws on terminal and desktop from the start, with the Molt now button', async ($, on) => {
+test('the bar draws on terminal and desktop from the start, with the molt button', async ($, on) => {
   folder(on, {})
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'molt', surface, component: 'AbovePrompt', props: { hasSurvey: false } as never })
-    expect(await ui.find({ type: 'Text', text: /molt · ctx 0k/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /0k\/150k/ })).toBeDefined()
     expect(await ui.find({ key: 'molt' })).toBeDefined()
     await ui.unmount()
   }

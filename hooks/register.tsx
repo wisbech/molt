@@ -36,6 +36,8 @@ const S = {
   phase: 'idle' as 'idle' | 'shedding',
   molts: 0,
   last: '',
+  lastAt: 0, // when `last` was set; the bar shows it for a while, then only the indicator
+  turnAt: 0, // when the last turn ended; the idle clock in the bar counts from it
   idleTimer: null as { cancel: () => void } | null,
   // diagnostics for "I do not see the bar": where the session draws, and whether the bar was ever asked for
   surfaces: '' as string,
@@ -50,6 +52,22 @@ const S = {
 }
 
 const k = (n: number) => `${Math.round(n / 1000)}k`
+const SHOW_MS = 90_000 // how long a notice stays in the bar
+
+// Terminal and desktop draw the bar; every other surface gets a dim transcript line instead.
+const hasBar = () => /terminal|desktop/i.test(S.surfaces)
+
+// One notice: into the bar where there is one (it fades after SHOW_MS), else a transcript line.
+function say($: Engine, text: string): void {
+  S.last = text
+  S.lastAt = Date.now()
+  if (hasBar()) $.ui.invalidate('ui.render')
+  else $.ui.log(`molt: ${text}`)
+}
+
+// Fullness 0..1 → a theme color: green, then amber from 60%, red from 85%.
+const tone = (f: number) => (f >= 0.85 ? 'error' : f >= 0.6 ? 'warning' : 'success')
+const CLOCK = ['○', '◔', '◑', '◕', '●']
 const ema = (old: number, next: number, a = 0.3) => old + a * (next - old)
 
 // Tokens read this turn across all its API calls, and how many calls that was.
@@ -63,7 +81,8 @@ function turnReads(usage: { input_tokens: number; cache_read_input_tokens: numbe
 // T = F + sqrt(2·m·g·F), kept inside sane bounds and rounded to 5k.
 export function solveCeiling(floor: number, growth: number, moltReads: number): number {
   const f = Math.max(20_000, floor)
-  const t = f + Math.sqrt(2 * Math.max(1, moltReads) * Math.max(500, growth) * f)
+  // 1.5× the pure minimum: the cost curve is flat past it and a roomier shell molts less often.
+  const t = f + 1.5 * Math.sqrt(2 * Math.max(1, moltReads) * Math.max(500, growth) * f)
   return Math.round(Math.min(400_000, Math.max(f + 20_000, t)) / 5_000) * 5_000
 }
 
@@ -191,8 +210,7 @@ function shed($: Engine): void {
   $.clock.after(1, () => {
     void $.command.run({ command: S.moltCommand } as never).catch((err: unknown) => {
       S.phase = 'idle'
-      S.last = `molt could not start: ${err instanceof Error ? err.message : String(err)}`
-      $.ui.log(`molt: ${S.last}`)
+      say($, `could not start: ${err instanceof Error ? err.message : String(err)}`)
       $.ui.invalidate('ui.render')
     })
   })
@@ -212,7 +230,7 @@ function shedding($: Engine): void {
   S.idleTimer?.cancel()
   S.idleTimer = null
   $.ui.invalidate('ui.render')
-  $.ui.log(`molt: saving ${DIR}/HANDOFF.md, then compacting (context ${k(S.ctx)})`)
+  if (!hasBar()) $.ui.log(`molt: saving ${DIR}/HANDOFF.md, then compacting (context ${k(S.ctx)})`)
 }
 
 function graphText(notes: Note[]): string {
@@ -255,8 +273,11 @@ export const register: Register = (on, options) => {
     S.section = await compose($)
     const { problems } = await lint($)
     if (problems.length) $.ui.toast(`${DIR}: ${problems.length} lint issue(s). Run /molt-lint.`)
-    // One dim transcript line, drawn on every surface (claude.ai and phone included), so "is molt on?" is answered.
-    $.ui.log(`molt ${S.section ? 'resumed from' : 'on'} ${DIR}/ · sheds at ${k(S.ceiling)}${pinned ? '' : ' (solved)'} or ${idleMinutes} min idle · /molt sheds now, /molt lint checks`)
+    // Where no bar is drawn (claude.ai, phone) one dim transcript line answers "is molt on?".
+    if (!hasBar()) $.ui.log(`molt ${S.section ? 'resumed from' : 'on'} ${DIR}/ · sheds at ${k(S.ceiling)}${pinned ? '' : ' (solved)'} or ${idleMinutes} min idle · /molt sheds now, /molt lint checks`)
+    S.turnAt = Date.now()
+    // The bar's idle clock advances a glyph a few times an hour; notices fade on the same tick.
+    $.clock.every(60_000, () => $.ui.invalidate('ui.render'))
     // Cloud: the VM pauses after a few idle minutes and Claude Code restarts on resume, so the idle timer
     // never fires there and every resume after the cache TTL rewrites the whole context. If this is a
     // resume with a large context, shed now: the rewrite is being paid anyway, make it the last one.
@@ -265,8 +286,7 @@ export const register: Register = (on, options) => {
       const { context } = await $.session.usage()
       if ((context.tokens ?? 0) >= IDLE_FLOOR) {
         S.ctx = context.tokens ?? 0
-        S.last = `cloud resume at ${k(S.ctx)}: molting before the next cold start`
-        $.ui.log(`molt: ${S.last}`)
+        say($, `cloud resume at ${k(S.ctx)}: molting before the next cold start`)
         shed($)
       }
     }
@@ -308,18 +328,16 @@ export const register: Register = (on, options) => {
           skip: err instanceof Error ? err.message : String(err),
         }))
         if ('skip' in r) {
-          S.last = `molt: compaction skipped (${r.skip})`
+          S.last = `compaction skipped (${r.skip})`
         } else {
           S.molts += 1
           S.ctx = r.tokensAfter ?? S.ctx
           S.isFloorPending = true // the next turn measures the new floor
           S.last = `molted ${k(before)} → ${k(S.ctx)}`
         }
-        $.ui.toast(S.last)
-        $.ui.log(`molt: ${S.last}`)
+        say($, S.last)
       } else {
-        S.last = `molt interrupted (${e.reason})`
-        $.ui.log(`molt: ${S.last}`)
+        say($, `interrupted (${e.reason})`)
       }
     }
 
@@ -332,13 +350,13 @@ export const register: Register = (on, options) => {
       S.idleTimer?.cancel()
       S.idleTimer = $.clock.after(idleMinutes * 60_000, () => {
         S.idleTimer = null
-        S.last = `idle ${idleMinutes} min, molting before the cache expires`
-        $.ui.log(`molt: ${S.last}`)
+        say($, `idle ${idleMinutes} min, molting before the cache expires`)
         shed($)
       })
     }
 
-    $.ui.status(`ctx ${k(S.ctx)}${S.molts ? ` · molts ${S.molts}` : ''}`)
+    S.turnAt = Date.now()
+    $.ui.status(`ctx ${k(S.ctx)}`)
     $.ui.invalidate('ui.render')
     return next(e)
   })
@@ -348,14 +366,27 @@ export const register: Register = (on, options) => {
     S.barDraws += 1
     if (e.props.hasSurvey) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    const text =
-      S.phase === 'shedding'
-        ? `molt · saving ${DIR}/HANDOFF.md, then compacting…`
-        : `molt · ctx ${k(S.ctx)} · sheds at ${k(S.ceiling)}${pinned ? '' : ' (solved)'} or ${idleMinutes} min idle${S.molts ? ` · molts ${S.molts}` : ''}${S.last ? ` · ${S.last}` : ''} `
+    if (S.phase === 'shedding') {
+      return (
+        <Box>
+          <Text color="warning">◌ </Text>
+          <Text dimColor>molting…</Text>
+        </Box>
+      )
+    }
+    // Two glyphs: ● how full the shell is (of the ceiling), ◔ how far into the idle hour.
+    const full = Math.min(1, S.ctx / Math.max(1, S.ceiling))
+    const idleMin = S.turnAt ? (Date.now() - S.turnAt) / 60_000 : 0
+    const idle = idleMinutes > 0 && S.ctx >= IDLE_FLOOR ? Math.min(1, idleMin / idleMinutes) : 0
+    const notice = S.last && Date.now() - S.lastAt < SHOW_MS ? S.last : ''
     return (
       <Box>
-        <Text dimColor>{text}</Text>
-        {S.phase === 'idle' && <Button key="molt" label="Molt now" onPress={() => shed($)} />}
+        <Text color={tone(full)}>● </Text>
+        <Text dimColor>{k(S.ctx)}/{k(S.ceiling)} </Text>
+        {idle > 0 && <Text color={tone(idle)}>{CLOCK[Math.min(4, Math.floor(idle * 4))]} </Text>}
+        {idle > 0 && <Text dimColor>{Math.floor(idleMin)}m </Text>}
+        {notice && <Text dimColor>· {notice} </Text>}
+        <Button key="molt" label="molt" onPress={() => shed($)} />
       </Box>
     )
   })
