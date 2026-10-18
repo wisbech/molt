@@ -43,6 +43,7 @@ const S = {
   surfaces: '' as string,
   barDraws: 0,
   moltCommand: 'molt', // molt:molt when installed, molt from --plugin-dir; read off $.command.list()
+  isAutoOff: false, // set when this surface cannot compact: the handoff is saved, the shed is left to /compact
   // the sweet-spot inputs
   floor: 0, // F: context at the first turn after a start or a molt
   isFloorPending: true,
@@ -239,6 +240,7 @@ async function answer($: Engine, what: 'lint' | 'graph', ceiling: string): Promi
 
 // The model is about to save state; the turn that follows ends in a compaction.
 function shedding($: Engine): void {
+  if (S.phase === 'shedding') return
   S.phase = 'shedding'
   S.idleTimer?.cancel()
   S.idleTimer = null
@@ -341,7 +343,20 @@ export const register: Register = (on, options) => {
           skip: err instanceof Error ? err.message : String(err),
         }))
         if ('skip' in r) {
-          S.last = `compaction skipped (${r.skip})`
+          // Some surfaces refuse $.session.compact (headless, some remote hosts) but take /compact as a
+          // command. Try that once the turn is over; if it is refused too, stop molting automatically here,
+          // otherwise the size check below sheds again every turn.
+          S.isAutoOff = true
+          S.last = `compaction unavailable here; handoff saved, running /compact`
+          $.clock.after(1, () => {
+            void $.command.run({ command: 'compact', args: COMPACT_INSTRUCTIONS } as never)
+              .then(() => {
+                S.molts += 1
+                S.isFloorPending = true
+                say($, `molted ${k(before)} via /compact`)
+              })
+              .catch((err: unknown) => say($, `no compaction on this surface (${err instanceof Error ? err.message : String(err)}); auto molt off, /compact by hand`))
+          })
         } else {
           S.molts += 1
           S.ctx = r.tokensAfter ?? S.ctx
@@ -356,9 +371,11 @@ export const register: Register = (on, options) => {
 
     if (!pinned) S.ceiling = solveCeiling(S.floor || S.ctx, S.growth, S.moltReads)
 
-    if (S.phase === 'idle' && isAuto && S.ctx >= S.ceiling) {
+    if (S.isAutoOff && S.ctx < S.ceiling) S.isAutoOff = false // a compaction did land; arm again
+    const isArmed = S.phase === 'idle' && isAuto && !S.isAutoOff
+    if (isArmed && S.ctx >= S.ceiling) {
       shed($)
-    } else if (S.phase === 'idle' && isAuto && idleMinutes > 0 && S.ctx >= IDLE_FLOOR) {
+    } else if (isArmed && idleMinutes > 0 && S.ctx >= IDLE_FLOOR) {
       // Molt before the cache goes cold, not after.
       S.idleTimer?.cancel()
       S.idleTimer = $.clock.after(idleMinutes * 60_000, () => {
