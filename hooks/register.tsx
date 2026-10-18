@@ -431,7 +431,13 @@ export const register: Register = (on, options) => {
       return answer($, arg, ceilingText()).then(r => ({ text: `Relay this to the user exactly, then stop:\n\n${r.text}` }))
     }
     shedding($)
-    return next(e)
+    if (!S.isAutoOff) return next(e)
+    // This surface refused the mod's compaction once already. The model carries the mitigation: the
+    // handoff is the shed, so a fresh session resuming from it is the compaction. Say so, once.
+    return next(e).then(r => ({
+      ...r,
+      text: `${r.text}\n\n7. This surface cannot compact from inside the session. After step 6, add one line: the handoff is saved in ${DIR}/, so the cheapest next step is a fresh session, which resumes from it at a fraction of this context. Do not run /molt again in this session.`,
+    }))
   })
   on('command.run', { command: ['molt', 'molt:molt'] }, ($, e, next) => {
     const arg = e.args.trim()
