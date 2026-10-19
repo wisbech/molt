@@ -44,6 +44,7 @@ const S = {
   barDraws: 0,
   moltCommand: 'molt', // molt:molt when installed, molt from --plugin-dir; read off $.command.list()
   isAutoOff: false, // set when this surface cannot compact: the handoff is saved, the shed is left to /compact
+  isDirty: false, // context grew since the last molt: there is something new to hand off
   // the sweet-spot inputs
   floor: 0, // F: context at the first turn after a start or a molt
   isFloorPending: true,
@@ -327,6 +328,7 @@ export const register: Register = (on, options) => {
       S.isFloorPending = false
     } else if (S.phase === 'idle' && t && S.ctx > ctxBefore) {
       S.growth = ema(S.growth, (S.ctx - ctxBefore) / t.calls)
+      S.isDirty = true
       void $.store.set('growth', S.growth)
     }
 
@@ -352,6 +354,7 @@ export const register: Register = (on, options) => {
             void $.command.run({ command: 'compact', args: COMPACT_INSTRUCTIONS } as never)
               .then(() => {
                 S.molts += 1
+                S.isDirty = false
                 S.isFloorPending = true
                 say($, `molted ${k(before)} via /compact`)
               })
@@ -359,6 +362,7 @@ export const register: Register = (on, options) => {
           })
         } else {
           S.molts += 1
+          S.isDirty = false
           S.ctx = r.tokensAfter ?? S.ctx
           S.isFloorPending = true // the next turn measures the new floor
           S.last = `molted ${k(before)} → ${k(S.ctx)}`
@@ -375,7 +379,9 @@ export const register: Register = (on, options) => {
     const isArmed = S.phase === 'idle' && isAuto && !S.isAutoOff
     if (isArmed && S.ctx >= S.ceiling) {
       shed($)
-    } else if (isArmed && idleMinutes > 0 && S.ctx >= IDLE_FLOOR) {
+    } else if (isArmed && S.isDirty && idleMinutes > 0 && S.ctx >= IDLE_FLOOR) {
+      // Only when something was added since the last molt: an idle session that already molted has
+      // nothing new to hand off, and a molt per idle hour would cost more than it saves.
       // Molt before the cache goes cold, not after.
       S.idleTimer?.cancel()
       S.idleTimer = $.clock.after(idleMinutes * 60_000, () => {
