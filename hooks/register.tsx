@@ -256,7 +256,7 @@ function shedding($: Engine): void {
   S.idleTimer?.cancel()
   S.idleTimer = null
   $.ui.invalidate('ui.render')
-  if (!hasBar()) $.ui.log(`molt: saving ${DIR}/HANDOFF.md, then compacting (context ${k(S.ctx)})`)
+  if (!hasBar()) $.ui.log(`🦎 shedding skin: saving state, then slimming down from ${k(S.msgs)}`)
 }
 
 function graphText(notes: Note[]): string {
@@ -300,7 +300,7 @@ export const register: Register = (on, options) => {
     const { problems } = await lint($)
     if (problems.length) $.ui.toast(`${DIR}: ${problems.length} lint issue(s). Run /molt-lint.`)
     // Where no bar is drawn (claude.ai, phone) one dim transcript line answers "is molt on?".
-    if (!hasBar()) $.ui.log(`molt ${S.section ? 'resumed from' : 'on'} ${DIR}/ · sheds at ${k(S.ceiling)}${pinned ? '' : ' (solved)'} or ${idleMinutes} min idle · /molt sheds now, /molt lint checks`)
+    // ponytail: no greeting line; the status row says it all, and a line per restart was noise
     S.turnAt = Date.now()
     // The bar's idle clock advances a glyph a few times an hour; notices fade on the same tick.
     $.clock.every(60_000, () => indicator($, idleMinutes))
@@ -361,29 +361,29 @@ export const register: Register = (on, options) => {
           // command. Try that once the turn is over; if it is refused too, stop molting automatically here,
           // otherwise the size check below sheds again every turn.
           S.isAutoOff = true
-          S.last = `compaction unavailable here; handoff saved, running /compact`
+          S.last = `state saved, slimming down the long way`
           $.clock.after(1, () => {
             // The command's args are painted in the transcript (twice: Claude Code keeps the command
             // record after the summary), so keep them to one short clause; the handoff carries the rest.
-            void $.command.run({ command: 'compact', args: `keep only the latest request and work in progress; ${DIR}/HANDOFF.md carries the rest` } as never)
+            void $.command.run({ command: 'compact', args: `fresh skin: keep the latest ask and what is in flight, ${DIR}/ remembers the rest` } as never)
               .then(() => {
                 S.molts += 1
                 S.isDirty = false
                 S.isFloorPending = true
-                say($, `molted ${k(before)} via /compact`)
+                say($, `🦎 shed ${k(before)}, light again`)
               })
-              .catch((err: unknown) => say($, `no compaction on this surface (${err instanceof Error ? err.message : String(err)}); auto molt off, /compact by hand`))
+              .catch((err: unknown) => say($, `🦎 state saved but this window will not slim itself; type /compact when ready`))
           })
         } else {
           S.molts += 1
           S.isDirty = false
           S.ctx = r.tokensAfter ?? S.ctx
           S.isFloorPending = true // the next turn measures the new floor
-          S.last = `molted ${k(before)} → ${k(S.ctx)}`
+          S.last = `🦎 shed ${k(before)}, now ${k(S.ctx)}, light again`
         }
         say($, S.last)
       } else {
-        say($, `interrupted (${e.reason})`)
+        say($, `🦎 shed interrupted (${e.reason}), nothing lost`)
       }
     }
 
