@@ -357,23 +357,12 @@ export const register: Register = (on, options) => {
           skip: err instanceof Error ? err.message : String(err),
         }))
         if ('skip' in r) {
-          // Some surfaces refuse $.session.compact (headless, some remote hosts) but take /compact as a
-          // command. Try that once the turn is over; if it is refused too, stop molting automatically here,
-          // otherwise the size check below sheds again every turn.
+          // Some surfaces refuse $.session.compact (the desktop app, headless). Running /compact as a
+          // command instead paints its text in the transcript twice, so no: the handoff is saved, and
+          // the session's own auto-compact (or a /compact by hand) does the shedding. Latch off until
+          // the conversation actually drops, otherwise the size check would shed again every turn.
           S.isAutoOff = true
-          S.last = `state saved, slimming down the long way`
-          $.clock.after(1, () => {
-            // The command's args are painted in the transcript (twice: Claude Code keeps the command
-            // record after the summary), so keep them to one short clause; the handoff carries the rest.
-            void $.command.run({ command: 'compact', args: `fresh skin: keep the latest ask and what is in flight, ${DIR}/ remembers the rest` } as never)
-              .then(() => {
-                S.molts += 1
-                S.isDirty = false
-                S.isFloorPending = true
-                say($, `🦎 shed ${k(before)}, light again`)
-              })
-              .catch((err: unknown) => say($, `🦎 state saved but this window will not slim itself; type /compact when ready`))
-          })
+          S.last = `🦎 state saved; this window slims itself at its own auto-compact, or type /compact`
         } else {
           S.molts += 1
           S.isDirty = false
