@@ -78,7 +78,7 @@ CLAUDE_CODE_PLUGIN_DIRS=~/molt
 Setup script:
 git clone --depth 1 https://github.com/wisbech/molt.git ~/molt</code></pre>
     <div class="row">
-      <span class="muted">No bar on claude.ai; molt writes transcript lines instead. Use <code>/molt lint</code> with a space there. Commit <code>.state/</code> so the next container resumes from it.</span>
+      <span class="muted">Use <code>/molt lint</code> with a space there. Commit <code>.state/</code> so the next container resumes from it.</span>
       <button data-copy="cloud">Copy</button>
     </div>
   </div>
@@ -117,12 +117,10 @@ git clone --depth 1 https://github.com/wisbech/molt.git ~/molt</code></pre>
   </div>
   <p>What it was not: the personal harness, hooks and rituals were under 4% of the tokens. Measure before you blame your tooling.</p>
 
+  <h2>What was measured</h2>
+  <p>Version 0.3 molted by itself, on an idle timer and on context size. Over two weeks its own turns were 13–87% of each session's tokens: a molt costs 3–4 full context reads, while the cold cache rewrite it was meant to avoid costs one write. The automatic molts ate the per-call gain, so 0.4.0 removes them. Claude Code's own <code>/autocompact 150k</code> caps the context for free; pair molt with it. What is worth keeping is the folder-as-state convention and the commands you run on purpose.</p>
+
   <h2>The mechanism</h2>
-  <p>Two criteria, one call.</p>
-  <ol>
-    <li><strong>Idle.</strong> Fifty minutes into an idle stretch, while the cache is still warm and reads are cheap, the session molts. When you come back the rewrite is of a 60k context, not 500k.</li>
-    <li><strong>Size.</strong> Context above a ceiling that molt solves, not sets. Over a stretch between molts, tokens per call ≈ (F+T)/2 + m·T·g/(T−F): F the floor after a molt, g the growth per API call, m the reads a molt costs. The minimum is <code>T = F + √(2·m·g·F)</code>; molt takes 1.5× that. It measures all three and re-solves after every turn: light chat lands near 105k, heavy subagent work near 215k on a 73k floor.</li>
-  </ol>
   <p>The call is <code>/molt</code>. The model saves state to <code>.state/</code>; the mod compacts the session in place, keeping only what the handoff does not cover. Same session, same prompt box, a fraction of the tokens.</p>
 <pre><code>.state/
   INDEX.md      routing table: one line per note, says WHEN to read it (cap 200)
@@ -133,10 +131,10 @@ git clone --depth 1 https://github.com/wisbech/molt.git ~/molt</code></pre>
 
   <h2>Use</h2>
   <ul>
-    <li>Nothing, usually. At a criterion the session molts by itself.</li>
-    <li>The status row under the prompt shows <code>🟢 132k ◔ 12m</code>: the dot is fullness against the ceiling (green, yellow, red), the clock is how far into the idle window. A <code>molted 669k → 80k</code> notice shows above the prompt for 10 seconds, then goes.</li>
-    <li><code>/molt [note]</code> molts now. <code>/molt-lint</code> is free housekeeping. <code>/molt-graph</code> prints note links.</li>
-    <li>Pair with the native <code>/autocompact 150k</code> and <code>CLAUDE_CODE_SUBAGENT_MODEL=sonnet</code>.</li>
+    <li><code>/molt [note]</code> before you leave a thread or when it feels heavy. The model writes the handoff, then the session compacts in place.</li>
+    <li><code>/molt-lint</code> is free housekeeping: index cap, orphans, broken links, stale handoff.</li>
+    <li><code>/molt-graph</code> prints note links. Also free.</li>
+    <li><code>/autocompact 150k</code> for the context cap, and <code>CLAUDE_CODE_SUBAGENT_MODEL=sonnet</code> so subagents do not inherit the most expensive model.</li>
   </ul>
 
   <h2>Measure your own</h2>

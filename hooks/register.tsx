@@ -1,15 +1,4 @@
-// molt: when context outgrows its shell, shed it into the folder and keep going.
-//
-// Criteria, in order of what they save:
-//   1. idle: the prompt cache expires after an hour idle, and the first call after that
-//      re-writes the whole context at full price. So 50 minutes into an idle stretch,
-//      while the cache is still warm and reads are cheap, molt; the rewrite on return
-//      is then of a small context. This is where the money went in the traces.
-//   2. size: context tokens >= the ceiling, the backstop. The ceiling is solved, not set:
-//      over a stretch between molts, tokens per call ≈ (F + T)/2 + m·T·g/(T − F), where
-//      F is the floor (context right after a molt), g the growth per API call and m the
-//      reads a molt itself costs. Its minimum is T = F + sqrt(2·m·g·F). Molt measures
-//      F, g and m from usage and re-solves after every turn; `threshold` pins it instead.
+// molt: the folder is the state. /molt saves a handoff to .state/, then compacts the session in place.
 // Call: the /molt command (commands/molt.md) has the model save state to .state/,
 //       then this module compacts the session in place. Same session, small context.
 //
@@ -24,16 +13,6 @@ const INDEX_CAP = 200
 const HANDOFF_CAP = 60
 const STALE_DAYS = 7
 const DAY = 86_400_000
-const MIN_SHED = 20_000 // a conversation smaller than this is not worth a molt: the handoff turn would cost more
-
-// How much conversation a molt is worth: the solved ceiling above the floor, never under MIN_SHED.
-const shedAt = () => Math.max(MIN_SHED, S.ceiling - S.floor)
-
-// The conversation's share of the window, from the /context breakdown; the window minus the floor when absent.
-function messages(context: { tokens?: number; breakdown?: { categories: { name: string; tokens: number; kind: string }[] } }): number {
-  const row = context.breakdown?.categories.find(c => c.kind === 'used' && /message/i.test(c.name))
-  return row ? row.tokens : Math.max(0, (context.tokens ?? 0) - S.floor)
-}
 
 type Note = { id: string; path: string; title: string; status: string; links: string[]; files: string[] }
 type Lint = { problems: string[]; notes: Note[]; indexLines: number }
@@ -41,74 +20,7 @@ type Lint = { problems: string[]; notes: Note[]; indexLines: number }
 // Module state. A reload starts it over, which is fine: it is all derivable.
 const S = {
   section: null as string | null, // the context block; re-read after every molt
-  ctx: 0,
-  msgs: 0, // the conversation's share of the window (the /context "Messages" row): the only part a molt can shed
   phase: 'idle' as 'idle' | 'shedding',
-  molts: 0,
-  last: '',
-  lastAt: 0, // when `last` was set; the bar shows it for a while, then only the indicator
-  turnAt: 0, // when the last turn ended; the idle clock in the bar counts from it
-  idleTimer: null as { cancel: () => void } | null,
-  // diagnostics for "I do not see the bar": where the session draws, and whether the bar was ever asked for
-  surfaces: '' as string,
-  barDraws: 0,
-  moltCommand: 'molt', // molt:molt when installed, molt from --plugin-dir; read off $.command.list()
-  isAutoOff: false, // set when this surface cannot compact: the handoff is saved, the shed is left to /compact
-  isDirty: false, // context grew since the last molt: there is something new to hand off
-  // the sweet-spot inputs
-  floor: 0, // F: context at the first turn after a start or a molt
-  isFloorPending: true,
-  growth: 5_000, // g: tokens added per API call, EMA
-  moltReads: 3, // m: reads one molt costs (the handoff turn's calls + the compaction), EMA
-  ceiling: 150_000, // T: solved, or pinned by the threshold option
-}
-
-const k = (n: number) => `${Math.round(n / 1000)}k`
-const SHOW_MS = 10_000 // how long a notice stays above the prompt
-
-// Terminal and desktop draw the bar; every other surface gets a dim transcript line instead.
-const hasBar = () => /terminal|desktop/i.test(S.surfaces)
-
-// One notice: into the bar where there is one (it fades after SHOW_MS), else a transcript line.
-function say($: Engine, text: string): void {
-  S.last = text
-  S.lastAt = Date.now()
-  if (hasBar()) {
-    $.ui.invalidate('ui.render')
-    $.clock.after(SHOW_MS + 100, () => $.ui.invalidate('ui.render'))
-  } else $.ui.log(`molt: ${text}`)
-}
-
-// The indicator lives in the status row under the prompt: 🟢 177k ◔ 12m. Fullness as the dot's
-// color, idle time as a clock that fills over the idle window. The status row takes text only.
-function indicator($: Engine, idleMinutes: number): void {
-  const full = Math.min(1, S.msgs / Math.max(1, shedAt()))
-  const idleMin = S.turnAt ? (Date.now() - S.turnAt) / 60_000 : 0
-  const idle = idleMinutes > 0 && S.msgs >= MIN_SHED ? Math.min(1, idleMin / idleMinutes) : 0
-  const dot = S.phase === 'shedding' ? '⚪' : full >= 0.85 ? '🔴' : full >= 0.6 ? '🟡' : '🟢'
-  const clock = idle > 0 ? ` ${CLOCK[Math.min(4, Math.floor(idle * 4))]} ${Math.floor(idleMin)}m` : ''
-  $.ui.status(`${dot} ${k(S.msgs)} of ${k(S.ctx)}${clock}`)
-}
-
-// Fullness 0..1 → a theme color: green, then amber from 60%, red from 85%.
-const tone = (f: number) => (f >= 0.85 ? 'error' : f >= 0.6 ? 'warning' : 'success')
-const CLOCK = ['○', '◔', '◑', '◕', '●']
-const ema = (old: number, next: number, a = 0.3) => old + a * (next - old)
-
-// Tokens read this turn across all its API calls, and how many calls that was.
-function turnReads(usage: { input_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number } | undefined, ctxBefore: number, ctxAfter: number) {
-  if (!usage) return null
-  const reads = usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
-  const avgCtx = Math.max(1, (Math.max(ctxBefore, 1) + Math.max(ctxAfter, 1)) / 2)
-  return { reads, calls: Math.max(1, Math.round(reads / avgCtx)) }
-}
-
-// T = F + sqrt(2·m·g·F), kept inside sane bounds and rounded to 5k.
-export function solveCeiling(floor: number, growth: number, moltReads: number): number {
-  const f = Math.max(20_000, floor)
-  // 1.5× the pure minimum: the cost curve is flat past it and a roomier shell molts less often.
-  const t = f + 1.5 * Math.sqrt(2 * Math.max(1, moltReads) * Math.max(500, growth) * f)
-  return Math.round(Math.min(400_000, Math.max(f + 20_000, t)) / 5_000) * 5_000
 }
 
 function frontmatter(text: string): Record<string, string> {
@@ -213,7 +125,7 @@ async function compose($: Engine): Promise<string | null> {
   }
   if (index === null && handoff === null) return null
   return [
-    `The folder is the state. ${DIR}/INDEX.md is the routing table: one line per note saying when to read it; open a note only when its line applies. ${DIR}/HANDOFF.md is where the last stretch stopped. ${DIR}/log.md is append-only history; grep it, never load it whole. When context grows past the threshold or the session idles, it molts: /molt saves state here, then the session compacts.`,
+    `The folder is the state. ${DIR}/INDEX.md is the routing table: one line per note saying when to read it; open a note only when its line applies. ${DIR}/HANDOFF.md is where the last stretch stopped. ${DIR}/log.md is append-only history; grep it, never load it whole. /molt saves state here, then the session compacts.`,
     index !== null ? `## ${DIR}/INDEX.md\n${index}` : '',
     handoff !== null ? `## ${DIR}/HANDOFF.md\n${handoff}` : '',
   ]
@@ -223,40 +135,12 @@ async function compose($: Engine): Promise<string | null> {
 
 const COMPACT_INSTRUCTIONS = `The project state was just saved to ${DIR}/HANDOFF.md and ${DIR}/INDEX.md, which the conversation carries. Keep only: the user's latest request, what is in progress right now, files currently being edited, and any tool result the very next step needs. Drop everything the handoff covers.`
 
-// Shedding runs as its own turn once the session is idle; a timer outlives the dispatch.
-// The host refuses $.prompt.submit of a text starting with "/", so the command is run as a command.
-// Whatever stops it, the phase goes back to idle: a stuck "shedding" hides the button and every criterion.
-function shed($: Engine): void {
-  if (S.phase === 'shedding') return
-  S.phase = 'shedding'
-  S.idleTimer?.cancel()
-  S.idleTimer = null
-  $.ui.invalidate('ui.render')
-  $.clock.after(1, () => {
-    void $.command.run({ command: S.moltCommand } as never).catch((err: unknown) => {
-      S.phase = 'idle'
-      say($, `could not start: ${err instanceof Error ? err.message : String(err)}`)
-      $.ui.invalidate('ui.render')
-    })
-  })
-}
-
 // The free answers: lint and graph never touch the model.
-async function answer($: Engine, what: 'lint' | 'graph', ceiling: string): Promise<{ text: string }> {
+async function answer($: Engine, what: 'lint' | 'graph'): Promise<{ text: string }> {
   const { problems, notes, indexLines } = await lint($)
   if (what === 'graph') return { text: graphText(notes) }
-  const head = `${DIR}/: ${notes.length} note(s), INDEX.md ${indexLines}/${INDEX_CAP} lines, context ${k(S.ctx)}, molts ${S.molts}, ceiling ${ceiling}\nsurfaces: ${S.surfaces || 'unknown'} · bar asked for ${S.barDraws} time(s) (the bar is drawn on terminal and desktop surfaces only)`
+  const head = `${DIR}/: ${notes.length} note(s), INDEX.md ${indexLines}/${INDEX_CAP} lines`
   return { text: problems.length ? `${head}\n${problems.map(p => `- ${p}`).join('\n')}` : `${head}\nclean.` }
-}
-
-// The model is about to save state; the turn that follows ends in a compaction.
-function shedding($: Engine): void {
-  if (S.phase === 'shedding') return
-  S.phase = 'shedding'
-  S.idleTimer?.cancel()
-  S.idleTimer = null
-  $.ui.invalidate('ui.render')
-  if (!hasBar()) $.ui.log(`🦎 shedding skin: saving state, then slimming down from ${k(S.msgs)}`)
 }
 
 function graphText(notes: Note[]): string {
@@ -269,54 +153,15 @@ function graphText(notes: Note[]): string {
     .join('\n')
 }
 
-export const register: Register = (on, options) => {
-  const pinned = Number(options?.threshold) > 0 ? Math.max(20_000, Number(options?.threshold)) : 0 // 0 = solve it
-  if (pinned) S.ceiling = pinned
-  const idleMinutes = String(options?.idleMinutes ?? '').trim() === '0' ? 0 : Math.max(1, Number(options?.idleMinutes) || 50)
-  const isAuto = options?.auto !== false
-
-  // A new prompt means the person is back: the idle clock starts over at turn.complete.
-  on('prompt.submit', ($, e, next) => {
-    S.idleTimer?.cancel()
-    S.idleTimer = null
-    return next(e)
-  })
-
+export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     // Registered commands raise command.run and answer without a model turn, in every mode.
     // (/molt itself is the plugin's markdown command: a skill the model expands.)
     await $.command.register({ name: 'molt-lint', description: `Lint ${DIR}/: index cap, orphans, broken links, stale handoff. Free.` })
     await $.command.register({ name: 'molt-graph', description: `Print ${DIR}/notes links as note -> links. Free.` })
-    const names = (await $.command.list().catch(() => [])).map(c => c.name)
-    S.moltCommand = names.includes('molt:molt') ? 'molt:molt' : 'molt'
-    // Priors from earlier sessions; this session's floor is measured on its first turn.
-    const g = Number(await $.store.get('growth'))
-    const m = Number(await $.store.get('moltReads'))
-    if (g > 0) S.growth = g
-    if (m > 0) S.moltReads = m
-    S.isFloorPending = true
-    S.surfaces = (await $.session.surfaces().catch(() => [] as string[])).join(',') || String(e.surface ?? 'none')
     S.section = await compose($)
     const { problems } = await lint($)
     if (problems.length) $.ui.toast(`${DIR}: ${problems.length} lint issue(s). Run /molt-lint.`)
-    // Where no bar is drawn (claude.ai, phone) one dim transcript line answers "is molt on?".
-    // ponytail: no greeting line; the status row says it all, and a line per restart was noise
-    S.turnAt = Date.now()
-    // The bar's idle clock advances a glyph a few times an hour; notices fade on the same tick.
-    $.clock.every(60_000, () => indicator($, idleMinutes))
-    // Cloud: the VM pauses after a few idle minutes and Claude Code restarts on resume, so the idle timer
-    // never fires there and every resume after the cache TTL rewrites the whole context. If this is a
-    // resume with a large context, shed now: the rewrite is being paid anyway, make it the last one.
-    const isCloud = Boolean(await $.env.get('CLAUDE_CODE_REMOTE_SESSION_ID'))
-    if (isCloud && isAuto) {
-      const { context } = await $.session.usage({ breakdown: 'summary' }).catch(() => $.session.usage())
-      S.ctx = context.tokens ?? 0
-      S.msgs = messages(context)
-      if (S.msgs >= MIN_SHED) {
-        say($, `cloud resume with ${k(S.msgs)} of conversation: molting before the next cold start`)
-        shed($)
-      }
-    }
     return next(e)
   })
 
@@ -327,131 +172,37 @@ export const register: Register = (on, options) => {
     return { ...r, blocks: [...r.blocks, { name: 'molt', text: S.section }] }
   })
 
+  // The molt turn ended: re-read the files it wrote, then compact. A refused compaction is silent.
   on('turn.complete', async ($, e, next) => {
     if (e.agentId) return next(e)
-    const ctxBefore = S.ctx
-    const { context } = await $.session.usage({ breakdown: 'summary' }).catch(() => $.session.usage())
-    S.ctx = context.tokens ?? 0
-    S.msgs = messages(context)
-    const t = turnReads(e.usage, ctxBefore, S.ctx)
-
-    if (S.isFloorPending && S.ctx > 0) {
-      S.floor = S.ctx
-      S.isFloorPending = false
-    } else if (S.phase === 'idle' && t && S.ctx > ctxBefore) {
-      S.growth = ema(S.growth, (S.ctx - ctxBefore) / t.calls)
-      S.isDirty = true
-      void $.store.set('growth', S.growth)
-    }
-
     if (S.phase === 'shedding') {
       S.phase = 'idle'
       if (e.reason === 'answer') {
-        const before = S.ctx
-        if (t) {
-          S.moltReads = ema(S.moltReads, t.calls + 1) // the handoff turn's calls, plus the compaction
-          void $.store.set('moltReads', S.moltReads)
-        }
         S.section = await compose($)
-        const r = await $.session.compact({ instructions: COMPACT_INSTRUCTIONS }).catch((err: unknown) => ({
-          skip: err instanceof Error ? err.message : String(err),
-        }))
-        if ('skip' in r) {
-          // Some surfaces refuse $.session.compact (the desktop app, headless). Running /compact as a
-          // command instead paints its text in the transcript twice, so no: the handoff is saved, and
-          // the session's own auto-compact (or a /compact by hand) does the shedding. Latch off until
-          // the conversation actually drops, otherwise the size check would shed again every turn.
-          S.isAutoOff = true
-          S.last = `🦎 state saved; this window slims itself at its own auto-compact, or type /compact`
-        } else {
-          S.molts += 1
-          S.isDirty = false
-          S.ctx = r.tokensAfter ?? S.ctx
-          S.isFloorPending = true // the next turn measures the new floor
-          S.last = `🦎 shed ${k(before)}, now ${k(S.ctx)}, light again`
-        }
-        say($, S.last)
-      } else {
-        say($, `🦎 shed interrupted (${e.reason}), nothing lost`)
+        await $.session.compact({ instructions: COMPACT_INSTRUCTIONS }).catch(() => undefined)
       }
     }
-
-    if (!pinned) S.ceiling = solveCeiling(S.floor || S.ctx, S.growth, S.moltReads)
-
-    if (S.isAutoOff && S.msgs < shedAt()) S.isAutoOff = false // a compaction did land; arm again
-    const isArmed = S.phase === 'idle' && isAuto && !S.isAutoOff
-    if (isArmed && S.msgs >= shedAt()) {
-      shed($)
-    } else if (isArmed && S.isDirty && idleMinutes > 0 && S.msgs >= MIN_SHED) {
-      // Only when something was added since the last molt: an idle session that already molted has
-      // nothing new to hand off, and a molt per idle hour would cost more than it saves.
-      // Molt before the cache goes cold, not after.
-      S.idleTimer?.cancel()
-      S.idleTimer = $.clock.after(idleMinutes * 60_000, () => {
-        S.idleTimer = null
-        say($, `idle ${idleMinutes} min, molting before the cache expires`)
-        shed($)
-      })
-    }
-
-    S.turnAt = Date.now()
-    indicator($, idleMinutes)
-    $.ui.invalidate('ui.render')
     return next(e)
   })
 
-  // Above the prompt: nothing at rest. A line while a molt runs, and a notice for SHOW_MS after one.
-  // The standing indicator is the status row (see `indicator`).
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    S.barDraws += 1
-    if (e.props.hasSurvey) return next(e)
-    const { Box, Text } = $.ui.resolve(e)
-    if (S.phase === 'shedding') {
-      return (
-        <Box>
-          <Text color="warning">◌ </Text>
-          <Text dimColor>molting…</Text>
-        </Box>
-      )
-    }
-    const notice = S.last && Date.now() - S.lastAt < SHOW_MS ? S.last : ''
-    if (!notice) return next(e)
-    return (
-      <Box>
-        <Text color={tone(Math.min(1, S.msgs / Math.max(1, shedAt())))}>● </Text>
-        <Text dimColor>molt {notice}</Text>
-      </Box>
-    )
-  })
-
-  const ceilingText = () =>
-    `${k(S.ceiling)}${pinned ? ' (pinned)' : ` (floor ${k(S.floor)}, growth ${k(S.growth)}/call, molt ${S.moltReads.toFixed(1)} reads)`}`
-
   // Names may come namespaced (molt:molt-lint) from an installed plugin, bare from --plugin-dir.
-  on('command.run', { command: ['molt-lint', 'molt:molt-lint'] }, $ => answer($, 'lint', ceilingText()))
-  on('command.run', { command: ['molt-graph', 'molt:molt-graph'] }, $ => answer($, 'graph', ceilingText()))
+  on('command.run', { command: ['molt-lint', 'molt:molt-lint'] }, $ => answer($, 'lint'))
+  on('command.run', { command: ['molt-graph', 'molt:molt-graph'] }, $ => answer($, 'graph'))
 
-  // A molt is starting: the model is about to save state. Fires however /molt was invoked
-  // (typed, submitted by the idle timer or the button, or called through the Skill tool).
+  // A molt is starting: the model is about to save state. Fires however /molt was invoked.
   on('skill.prompt', { skill: ['molt', 'molt:molt'] }, ($, e, next) => {
     const arg = /The user adds: (\S*)/.exec(e.text)?.[1]
     if (arg === 'lint' || arg === 'graph') {
       // Typed as /molt lint where the skill path took it: hand the model the free answer to relay.
-      return answer($, arg, ceilingText()).then(r => ({ text: `Relay this to the user exactly, then stop:\n\n${r.text}` }))
+      return answer($, arg).then(r => ({ text: `Relay this to the user exactly, then stop:\n\n${r.text}` }))
     }
-    shedding($)
-    if (!S.isAutoOff) return next(e)
-    // This surface refused the mod's compaction once already. The model carries the mitigation: the
-    // handoff is the shed, so a fresh session resuming from it is the compaction. Say so, once.
-    return next(e).then(r => ({
-      ...r,
-      text: `${r.text}\n\n7. This surface cannot compact from inside the session. After step 6, add one line: the handoff is saved in ${DIR}/, so the cheapest next step is a fresh session, which resumes from it at a fraction of this context. Do not run /molt again in this session.`,
-    }))
+    S.phase = 'shedding'
+    return next(e)
   })
   on('command.run', { command: ['molt', 'molt:molt'] }, ($, e, next) => {
     const arg = e.args.trim()
-    if (arg === 'lint' || arg === 'graph') return answer($, arg, ceilingText())
-    shedding($)
+    if (arg === 'lint' || arg === 'graph') return answer($, arg)
+    S.phase = 'shedding'
     return next(e)
   })
 }

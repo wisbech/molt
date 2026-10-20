@@ -9,4 +9,4 @@ Molt: save the project state to `.state/` so this session can shed its history a
 3. For each decision, failure or pattern worth keeping beyond this task, write `.state/notes/<kebab-id>.md` with frontmatter (`title`, `status: active`, `verified: <today>`, `files: [paths it is about]`, `links: [ids of related notes]`) and a body under 40 lines. Add one line to `.state/INDEX.md`: `- [title](notes/<id>.md) — read when <trigger>`. Keep INDEX.md under 200 lines. If a note supersedes another, set the old one's `status: superseded` and `superseded_by: <id>`, and remove its INDEX line.
 4. Do not write what the code or git history already says. Do not change anything else.
 5. If the environment variable `CLAUDE_CODE_REMOTE_SESSION_ID` is set, this is a cloud session whose container is wiped afterwards: run `git add .state && git commit -m "molt: handoff" && git push -u origin HEAD` on the current branch, so the handoff survives the container and the next session resumes from it. Skip this step on a local machine.
-6. Reply with one line naming what was written. The session compacts itself right after.
+6. Reply with one line naming what was written.

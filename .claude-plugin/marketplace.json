@@ -1,12 +1,14 @@
 {
   "name": "molt",
-  "description": "molt — when context outgrows its shell, shed it into the folder and keep going.",
-  "owner": { "name": "wisbech" },
+  "description": "molt — the folder is the state: a handoff in .state/ that every stretch resumes from.",
+  "owner": {
+    "name": "wisbech"
+  },
   "plugins": [
     {
       "name": "molt",
       "source": "./",
-      "description": "Two criteria (idle before the prompt cache expires; a solved context ceiling), one call (/molt: save state to .state/, compact in place)."
+      "description": "/molt saves a handoff to .state/ and compacts in place; /molt-lint and /molt-graph keep the folder honest. No automatic molts."
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 When context outgrows its shell, shed it into the folder and keep going.
 
-A Claude Code mod. Two criteria, one call, no new session, nothing to remember.
+A Claude Code mod. One command you run on purpose, no new session, nothing running in the background.
 
 ## The problem, measured
 
@@ -60,25 +60,20 @@ you blame your tooling.
 - `CLAUDE_CODE_PROMPT_CACHE_TTL=1h` where available.
 - `/context` and `/usage` to see what fills the window and what hits the cache.
 
-Those fix the size. None of them fixes the idle rewrite, and all of them need you to
-remember. Molt is the part that runs itself.
+Those cap the size. Molt adds the part they do not: a handoff in a folder, so a compaction, a `/clear`
+or a new session resumes from where you stopped.
+
+## What was measured
+
+Version 0.3 molted by itself, on an idle timer and on context size. Over two weeks its own
+turns were 13–87% of each session's tokens. A molt costs 3–4 full context reads (the handoff
+turn's calls plus the compaction); the cold cache rewrite it was meant to avoid costs one write.
+The automatic molts ate the per-call gain, so 0.4.0 removes them.
+
+Claude Code's own `/autocompact 150k` caps the context for free; pair molt with it. What is worth
+keeping is the folder-as-state convention and the commands you run on purpose.
 
 ## The mechanism
-
-Two criteria, one call.
-
-1. **Idle.** The prompt cache expires after an hour idle. The first call after that
-   re-writes the whole context at full write price; in the trace above every expensive
-   event was one of these. So 50 minutes into an idle stretch, while the cache is still
-   warm and reads are cheap, the session molts. When you come back the rewrite is of a
-   60k context, not 500k.
-2. **Size.** Context tokens ≥ the ceiling, the backstop. The ceiling is solved, not set.
-   Over a stretch between molts, tokens per call ≈ (F + T)/2 + m·T·g/(T − F): F the floor
-   (context right after a molt), g the growth per API call, m the reads a molt costs. The
-   minimum is T = F + √(2·m·g·F); molt takes 1.5× that, since the curve is flat past it and a
-   roomier shell molts less often. It measures all three from usage and re-solves after every
-   turn, so light chat lands near 105k and heavy subagent work near 215k on a 73k floor.
-   Set `threshold` to a number to pin it instead.
 
 The call is `/molt`. The model saves state to `.state/`; the mod then compacts the session in
 place with instructions to keep only what the handoff does not cover. Same session, same
@@ -98,12 +93,12 @@ that reads markdown can continue from it.
 
 ## Where it works
 
-| Surface | Automatic molt | Bar + button | `/molt`, `/molt-lint` |
-|---|---|---|---|
-| Terminal, Desktop app | yes | yes | yes |
-| Remote Control thread (phone or claude.ai driving your own machine) | yes | no bar; transcript lines instead | `/molt lint` with a space |
-| Cloud session (claude.ai Projects, claude.ai/code, `claude --cloud`) | yes, once the environment loads it (below) | no bar; transcript lines | `/molt lint` with a space |
-| Plain claude.ai chat without Claude Code | no plugins run there | | |
+| Surface | Commands |
+|---|---|
+| Terminal, Desktop app | `/molt`, `/molt-lint`, `/molt-graph` |
+| Remote Control thread (phone or claude.ai driving your own machine) | `/molt`, and `/molt lint` with a space |
+| Cloud session (claude.ai Projects, claude.ai/code, `claude --cloud`) | the same, once the environment loads molt (below) |
+| Plain claude.ai chat without Claude Code | none: no plugins run there |
 
 ### Cloud sessions and claude.ai Projects
 
@@ -122,12 +117,9 @@ git clone --depth 1 https://github.com/wisbech/molt.git ~/molt
 ```
 
 The setup script runs before Claude Code starts, and `CLAUDE_CODE_PLUGIN_DIRS` loads the clone like
-`--plugin-dir`. Every thread in that project then starts with molt on, and the first transcript line says so.
-Because the container is wiped between sessions, a cloud `/molt` commits `.state/` and pushes the thread's
-branch, so the next session resumes from it. Two cloud quirks molt works around: the VM pauses after a few
-idle minutes and restarts Claude Code on resume, so the idle timer cannot fire there, and every resume after
-the cache's hour starts cold. So on a cloud resume with a large context, molt sheds immediately: that
-rewrite is paid anyway, and it becomes the last big one.
+`--plugin-dir`. Every thread in that project then has `/molt`. Because the container is wiped between
+sessions, a cloud `/molt` commits `.state/` and pushes the thread's branch, so the next session resumes
+from it.
 
 ## Install
 
@@ -154,18 +146,12 @@ Site: https://wisbech.github.io/molt/ · Tests: `CLAUDE_CODE_ENABLE_FUNCTION_HOO
 
 ## Use
 
-- Nothing, usually. At a criterion the session molts by itself.
-- The status row under the prompt shows `🟢 32k of 158k ◔ 12m`: the conversation's share of the
-  window (the only part a molt can shed; the rest is system prompt, tools and memory), the dot is
-  that share against what a molt is worth (green, yellow from 60%, red from 85%), the clock is how
-  far into the idle window (it appears once there is at least 20k to shed). Nothing else at rest. While a molt runs a line says `◌ molting…`
-  above the prompt, and `🦎 shed 669k, now 80k, light again` shows there for 10 seconds, then goes.
-- `/molt [note]` molts now, with a note for the next stretch.
+- `/molt [note]` before you leave a thread or when it feels heavy. The model writes the handoff to
+  `.state/`, then the session compacts in place. The note goes to the next stretch.
 - `/molt-lint` is free deterministic housekeeping: index cap, orphans, broken links,
   superseded notes still routed, notes about deleted files, stale handoff. No model turn.
 - `/molt-graph` prints `note -> links`. Also free.
-- Options: `idleMinutes` (default 50; set to your cache TTL minus a margin), `threshold`
-  (empty: solved; a number pins it), `auto` (off: button and command only).
+- `/autocompact 150k` for the context cap. It is Claude Code's own, it is free, and molt leaves that job to it.
 
 ## Measure your own
 

@@ -1,25 +1,5 @@
 {
   "name": "molt",
-  "version": "0.3.8",
-  "description": "When context outgrows its shell, shed it: save state to .state/, compact in place, keep going. One criterion, one call, no new session.",
-  "userConfig": {
-    "threshold": {
-      "type": "string",
-      "title": "molt at (tokens)",
-      "description": "Empty: molt solves the ceiling from measured floor, growth per call and molt cost. A number pins it.",
-      "default": ""
-    },
-    "idleMinutes": {
-      "type": "string",
-      "title": "molt after idle (minutes)",
-      "description": "Molt this many minutes into an idle stretch, while the prompt cache (1h TTL) is still warm; 0 disables",
-      "default": "50"
-    },
-    "auto": {
-      "type": "boolean",
-      "title": "molt automatically",
-      "description": "Off: only the Molt now button and /molt shed",
-      "default": true
-    }
-  }
+  "version": "0.4.0",
+  "description": "The folder is the state: /molt saves a handoff to .state/ and compacts in place; /molt-lint and /molt-graph keep the folder honest. No automatic molts."
 }

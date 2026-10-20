@@ -1,7 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { solveCeiling } from './register'
 
 // The test engine's command.run is typed with the engine-stamped fields (origin, presentation),
 // which the kit fills in; a test passes the person's part only.
@@ -24,17 +23,6 @@ function folder(on: On, files: Record<string, string>, mtimeMs = 0) {
       .map(name => ({ name, kind: 'file' as const, size: 0, mtimeMs, isLink: false })),
   }))
 }
-
-test('the ceiling is the cost minimum: F + sqrt(2·m·g·F), bounded, in 5k steps', () => {
-  // John's setup: 73k floor, 3 reads per molt, 1.5× the pure minimum. Light work (1k/call) → ~105k; heavy (20k/call) → ~215k.
-  expect(solveCeiling(73_000, 1_000, 3)).toBe(105_000)
-  expect(solveCeiling(73_000, 5_000, 3)).toBe(145_000)
-  expect(solveCeiling(73_000, 20_000, 3)).toBe(215_000)
-  // never closer than 20k above the floor, never above 400k, floor never read below 20k
-  expect(solveCeiling(73_000, 10, 1)).toBe(95_000)
-  expect(solveCeiling(300_000, 200_000, 5)).toBe(400_000)
-  expect(solveCeiling(0, 5_000, 3)).toBe(55_000)
-})
 
 test('/molt lint reports an empty folder as clean', async ($, on) => {
   folder(on, {})
@@ -86,16 +74,6 @@ test('lint finds an orphan, a bad link, a superseded note still routed, a stale 
   const g = await run($, 'graph')
   expect(g.text).toContain('alpha -> ghost, old')
   expect(g.text).toContain('old (superseded)')
-})
-
-test('above the prompt nothing is drawn at rest, on terminal and desktop', async ($, on) => {
-  folder(on, {})
-  on('ui.render', () => ({ type: 'Box', props: {}, children: [] }) as never) // the surface beneath draws an empty band
-  for (const surface of ['terminal', 'desktop'] as const) {
-    const ui = await $.ui.mount({ plugin: 'molt', surface, component: 'AbovePrompt', props: { hasSurvey: false } as never })
-    expect(await ui.find({ type: 'Text', text: /molt/ })).toBeUndefined()
-    await ui.unmount()
-  }
 })
 
 test('/molt with a note passes through to the markdown command beneath', async ($, on) => {
