@@ -363,7 +363,9 @@ export const register: Register = (on, options) => {
           S.isAutoOff = true
           S.last = `compaction unavailable here; handoff saved, running /compact`
           $.clock.after(1, () => {
-            void $.command.run({ command: 'compact', args: COMPACT_INSTRUCTIONS } as never)
+            // The command's args are painted in the transcript (twice: Claude Code keeps the command
+            // record after the summary), so keep them to one short clause; the handoff carries the rest.
+            void $.command.run({ command: 'compact', args: `keep only the latest request and work in progress; ${DIR}/HANDOFF.md carries the rest` } as never)
               .then(() => {
                 S.molts += 1
                 S.isDirty = false
