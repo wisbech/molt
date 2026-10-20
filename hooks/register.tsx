@@ -24,7 +24,16 @@ const INDEX_CAP = 200
 const HANDOFF_CAP = 60
 const STALE_DAYS = 7
 const DAY = 86_400_000
-const IDLE_FLOOR = 50_000 // below this a fresh session costs about the same; nothing to shed
+const MIN_SHED = 20_000 // a conversation smaller than this is not worth a molt: the handoff turn would cost more
+
+// How much conversation a molt is worth: the solved ceiling above the floor, never under MIN_SHED.
+const shedAt = () => Math.max(MIN_SHED, S.ceiling - S.floor)
+
+// The conversation's share of the window, from the /context breakdown; the window minus the floor when absent.
+function messages(context: { tokens?: number; breakdown?: { categories: { name: string; tokens: number; kind: string }[] } }): number {
+  const row = context.breakdown?.categories.find(c => c.kind === 'used' && /message/i.test(c.name))
+  return row ? row.tokens : Math.max(0, (context.tokens ?? 0) - S.floor)
+}
 
 type Note = { id: string; path: string; title: string; status: string; links: string[]; files: string[] }
 type Lint = { problems: string[]; notes: Note[]; indexLines: number }
@@ -33,6 +42,7 @@ type Lint = { problems: string[]; notes: Note[]; indexLines: number }
 const S = {
   section: null as string | null, // the context block; re-read after every molt
   ctx: 0,
+  msgs: 0, // the conversation's share of the window (the /context "Messages" row): the only part a molt can shed
   phase: 'idle' as 'idle' | 'shedding',
   molts: 0,
   last: '',
@@ -72,12 +82,12 @@ function say($: Engine, text: string): void {
 // The indicator lives in the status row under the prompt: 🟢 177k ◔ 12m. Fullness as the dot's
 // color, idle time as a clock that fills over the idle window. The status row takes text only.
 function indicator($: Engine, idleMinutes: number): void {
-  const full = Math.min(1, S.ctx / Math.max(1, S.ceiling))
+  const full = Math.min(1, S.msgs / Math.max(1, shedAt()))
   const idleMin = S.turnAt ? (Date.now() - S.turnAt) / 60_000 : 0
-  const idle = idleMinutes > 0 && S.ctx >= IDLE_FLOOR ? Math.min(1, idleMin / idleMinutes) : 0
+  const idle = idleMinutes > 0 && S.msgs >= MIN_SHED ? Math.min(1, idleMin / idleMinutes) : 0
   const dot = S.phase === 'shedding' ? '⚪' : full >= 0.85 ? '🔴' : full >= 0.6 ? '🟡' : '🟢'
   const clock = idle > 0 ? ` ${CLOCK[Math.min(4, Math.floor(idle * 4))]} ${Math.floor(idleMin)}m` : ''
-  $.ui.status(`${dot} ${k(S.ctx)}${clock}`)
+  $.ui.status(`${dot} ${k(S.msgs)} of ${k(S.ctx)}${clock}`)
 }
 
 // Fullness 0..1 → a theme color: green, then amber from 60%, red from 85%.
@@ -299,10 +309,11 @@ export const register: Register = (on, options) => {
     // resume with a large context, shed now: the rewrite is being paid anyway, make it the last one.
     const isCloud = Boolean(await $.env.get('CLAUDE_CODE_REMOTE_SESSION_ID'))
     if (isCloud && isAuto) {
-      const { context } = await $.session.usage()
-      if ((context.tokens ?? 0) >= IDLE_FLOOR) {
-        S.ctx = context.tokens ?? 0
-        say($, `cloud resume at ${k(S.ctx)}: molting before the next cold start`)
+      const { context } = await $.session.usage({ breakdown: 'summary' }).catch(() => $.session.usage())
+      S.ctx = context.tokens ?? 0
+      S.msgs = messages(context)
+      if (S.msgs >= MIN_SHED) {
+        say($, `cloud resume with ${k(S.msgs)} of conversation: molting before the next cold start`)
         shed($)
       }
     }
@@ -319,8 +330,9 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     if (e.agentId) return next(e)
     const ctxBefore = S.ctx
-    const { context } = await $.session.usage()
+    const { context } = await $.session.usage({ breakdown: 'summary' }).catch(() => $.session.usage())
     S.ctx = context.tokens ?? 0
+    S.msgs = messages(context)
     const t = turnReads(e.usage, ctxBefore, S.ctx)
 
     if (S.isFloorPending && S.ctx > 0) {
@@ -375,11 +387,11 @@ export const register: Register = (on, options) => {
 
     if (!pinned) S.ceiling = solveCeiling(S.floor || S.ctx, S.growth, S.moltReads)
 
-    if (S.isAutoOff && S.ctx < S.ceiling) S.isAutoOff = false // a compaction did land; arm again
+    if (S.isAutoOff && S.msgs < shedAt()) S.isAutoOff = false // a compaction did land; arm again
     const isArmed = S.phase === 'idle' && isAuto && !S.isAutoOff
-    if (isArmed && S.ctx >= S.ceiling) {
+    if (isArmed && S.msgs >= shedAt()) {
       shed($)
-    } else if (isArmed && S.isDirty && idleMinutes > 0 && S.ctx >= IDLE_FLOOR) {
+    } else if (isArmed && S.isDirty && idleMinutes > 0 && S.msgs >= MIN_SHED) {
       // Only when something was added since the last molt: an idle session that already molted has
       // nothing new to hand off, and a molt per idle hour would cost more than it saves.
       // Molt before the cache goes cold, not after.
@@ -415,7 +427,7 @@ export const register: Register = (on, options) => {
     if (!notice) return next(e)
     return (
       <Box>
-        <Text color={tone(Math.min(1, S.ctx / Math.max(1, S.ceiling)))}>● </Text>
+        <Text color={tone(Math.min(1, S.msgs / Math.max(1, shedAt())))}>● </Text>
         <Text dimColor>molt {notice}</Text>
       </Box>
     )

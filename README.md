@@ -155,9 +155,10 @@ Site: https://wisbech.github.io/molt/ · Tests: `CLAUDE_CODE_ENABLE_FUNCTION_HOO
 ## Use
 
 - Nothing, usually. At a criterion the session molts by itself.
-- The status row under the prompt shows `🟢 132k ◔ 12m`: the dot is fullness against the ceiling
-  (green, yellow from 60%, red from 85%), the clock is how far into the idle window (it appears once
-  there is something to shed). Nothing else at rest. While a molt runs a line says `◌ molting…`
+- The status row under the prompt shows `🟢 32k of 158k ◔ 12m`: the conversation's share of the
+  window (the only part a molt can shed; the rest is system prompt, tools and memory), the dot is
+  that share against what a molt is worth (green, yellow from 60%, red from 85%), the clock is how
+  far into the idle window (it appears once there is at least 20k to shed). Nothing else at rest. While a molt runs a line says `◌ molting…`
   above the prompt, and `molted 669k → 80k` shows there for 10 seconds, then goes.
 - `/molt [note]` molts now, with a note for the next stretch.
 - `/molt-lint` is free deterministic housekeeping: index cap, orphans, broken links,
